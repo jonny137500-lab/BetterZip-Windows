@@ -213,19 +213,85 @@ public sealed class LocalApiServer : IAsyncDisposable
             if (colon <= 0) continue;
             headers[line[..colon].Trim().ToLowerInvariant()] = line[(colon + 1)..].Trim();
         }
-        var length = 0;
-        if (headers.TryGetValue("content-length", out var contentLength) &&
-            (!int.TryParse(contentLength, out length) || length < 0 || length > MaxBodyBytes))
-            throw new InvalidDataException("JSON request body must be 1 MiB or smaller.");
-        var body = new byte[length];
-        var offset = 0;
-        while (offset < length)
+        byte[] body;
+        if (headers.TryGetValue("transfer-encoding", out var transferEncoding))
         {
-            var read = await stream.ReadAsync(body.AsMemory(offset, length - offset), cancellationToken).ConfigureAwait(false);
-            if (read == 0) throw new InvalidDataException("Request body ended unexpectedly.");
-            offset += read;
+            if (!transferEncoding.Equals("chunked", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("Unsupported Transfer-Encoding.");
+            body = await ReadChunkedBodyAsync(stream, cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            var length = 0;
+            if (headers.TryGetValue("content-length", out var contentLength) &&
+                (!int.TryParse(contentLength, out length) || length < 0 || length > MaxBodyBytes))
+                throw new InvalidDataException("JSON request body must be 1 MiB or smaller.");
+            body = new byte[length];
+            var offset = 0;
+            while (offset < length)
+            {
+                var read = await stream.ReadAsync(body.AsMemory(offset, length - offset), cancellationToken).ConfigureAwait(false);
+                if (read == 0) throw new InvalidDataException("Request body ended unexpectedly.");
+                offset += read;
+            }
         }
         return new RequestData(first[0].ToUpperInvariant(), first[1], headers, body);
+    }
+
+    private static async Task<byte[]> ReadChunkedBodyAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        using var body = new MemoryStream();
+        while (true)
+        {
+            var line = await ReadAsciiLineAsync(stream, cancellationToken).ConfigureAwait(false);
+            var semicolon = line.IndexOf(';');
+            var sizeText = (semicolon >= 0 ? line[..semicolon] : line).Trim();
+            if (!int.TryParse(sizeText, System.Globalization.NumberStyles.HexNumber,
+                System.Globalization.CultureInfo.InvariantCulture, out var chunkSize) || chunkSize < 0)
+                throw new InvalidDataException("Malformed chunked request body.");
+            if (chunkSize == 0)
+            {
+                // Consume optional trailers through the terminating blank line.
+                while ((await ReadAsciiLineAsync(stream, cancellationToken).ConfigureAwait(false)).Length > 0) { }
+                return body.ToArray();
+            }
+            if (body.Length + chunkSize > MaxBodyBytes)
+                throw new InvalidDataException("JSON request body must be 1 MiB or smaller.");
+            var chunk = new byte[chunkSize];
+            var offset = 0;
+            while (offset < chunkSize)
+            {
+                var read = await stream.ReadAsync(chunk.AsMemory(offset, chunkSize - offset), cancellationToken).ConfigureAwait(false);
+                if (read == 0) throw new InvalidDataException("Chunked request body ended unexpectedly.");
+                offset += read;
+            }
+            body.Write(chunk, 0, chunk.Length);
+            var ending = new byte[2];
+            var endingRead = 0;
+            while (endingRead < 2)
+            {
+                var read = await stream.ReadAsync(ending.AsMemory(endingRead, 2 - endingRead), cancellationToken).ConfigureAwait(false);
+                if (read == 0) throw new InvalidDataException("Malformed chunk terminator.");
+                endingRead += read;
+            }
+            if (ending[0] != 13 || ending[1] != 10) throw new InvalidDataException("Malformed chunk terminator.");
+        }
+    }
+
+    private static async Task<string> ReadAsciiLineAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        using var line = new MemoryStream();
+        var one = new byte[1];
+        while (line.Length < MaxHeaderBytes)
+        {
+            var read = await stream.ReadAsync(one, cancellationToken).ConfigureAwait(false);
+            if (read == 0) throw new InvalidDataException("Unexpected end of chunked request body.");
+            line.WriteByte(one[0]);
+            var bytes = line.ToArray();
+            if (bytes.Length >= 2 && bytes[^2] == 13 && bytes[^1] == 10)
+                return Encoding.ASCII.GetString(bytes, 0, bytes.Length - 2);
+        }
+        throw new InvalidDataException("Chunked request line is too large.");
     }
 
     private static async Task WriteResponseAsync(NetworkStream stream, int status, object value)
