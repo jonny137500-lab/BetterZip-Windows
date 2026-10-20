@@ -80,6 +80,7 @@ public sealed class ZipArchiveService
                     Name = e.Key ?? string.Empty,
                     Kind = e.IsDirectory ? "Folder" : "File",
                     Length = e.Size,
+                    CompressedLength = e.CompressedSize,
                     Modified = e.LastModifiedTime is DateTime time ? new DateTimeOffset(time) : null
                 }));
             }
