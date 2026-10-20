@@ -5,6 +5,9 @@ public sealed class ArchiveEntryRow
  public string Name { get; init; } = "";
  public string Kind { get; init; } = "File";
  public long Length { get; init; }
+ public long? CompressedLength { get; init; }
+ public string CompressedSizeText => Kind == "Folder" || CompressedLength is null ? "—" : FormatSize(CompressedLength.Value);
+ public string CompressionRatioText => Kind == "Folder" || CompressedLength is null || Length <= 0 ? "—" : $"{(1d - (double)CompressedLength.Value / Length) * 100:0.#}%";
  public string SizeText => Kind == "Folder" ? "—" : FormatSize(Length);
  public DateTimeOffset? Modified { get; init; }
  public string ModifiedText => Modified?.ToLocalTime().ToString("yyyy-MM-dd HH:mm") ?? "—";
