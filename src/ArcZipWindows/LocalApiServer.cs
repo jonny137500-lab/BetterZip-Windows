@@ -91,9 +91,11 @@ public sealed class LocalApiServer : IAsyncDisposable
     private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
         var stream = client.GetStream();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(TimeSpan.FromSeconds(10));
         try
         {
-            var request = await ReadRequestAsync(stream, cancellationToken).ConfigureAwait(false);
+            var request = await ReadRequestAsync(stream, timeout.Token).ConfigureAwait(false);
             if (request is null) return;
             if (!Authorized(request.Headers))
             { await WriteResponseAsync(stream, 401, new { error = "Missing or invalid bearer token. Read api.token while the API is enabled." }); return; }
@@ -138,6 +140,7 @@ public sealed class LocalApiServer : IAsyncDisposable
             }
             await WriteResponseAsync(stream, 404, new { error = "Unknown endpoint." });
         }
+        catch (OperationCanceledException) { }
         catch (InvalidDataException ex) { await SafeWriteAsync(stream, 400, new { error = ex.Message }); }
         catch (JsonException ex) { await SafeWriteAsync(stream, 400, new { error = "Invalid JSON", detail = ex.Message }); }
         catch (ArgumentException ex) { await SafeWriteAsync(stream, 400, new { error = ex.Message }); }
