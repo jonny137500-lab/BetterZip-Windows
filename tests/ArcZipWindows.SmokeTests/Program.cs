@@ -32,6 +32,9 @@ try
     await File.WriteAllTextAsync(Path.Combine(folder, "nested", "inside.txt"), "nested payload");
     service.AddPaths(archivePath, [folder]);
     Check(service.List(archivePath).Any(x => x.Name == "sample-folder/nested/inside.txt"), "add folder tree with relative paths");
+    var folderArchive = Path.Combine(root, "folder-created.zip");
+    service.CreateFromPathsAny(folderArchive, [folder], overwrite: true, compressionLevel: 9);
+    Check(service.ListAny(folderArchive).Any(x => x.Name == "sample-folder/nested/inside.txt"), "create archive from folder and preserve paths");
     var extractedFolderFile = Path.Combine(root, "folder-extract");
     service.ExtractEntries(archivePath, ["sample-folder/nested/inside.txt"], extractedFolderFile);
     Check(await File.ReadAllTextAsync(Path.Combine(extractedFolderFile, "sample-folder", "nested", "inside.txt")) == "nested payload", "extract folder tree");
