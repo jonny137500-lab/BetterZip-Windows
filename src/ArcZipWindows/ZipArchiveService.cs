@@ -163,6 +163,8 @@ public sealed class ZipArchiveService
         if (duplicateEntry is not null)
             throw new IOException($"Multiple selected inputs map to the same archive entry '{duplicateEntry.Key}'. Select their parent folder to preserve paths.");
 
+        foreach (var item in entries) ValidateEntryName(item.EntryName);
+
         lock (Gate(fullPath))
         {
             if (File.Exists(fullPath) && !overwrite)
