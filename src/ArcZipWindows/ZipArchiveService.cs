@@ -6,6 +6,7 @@ using SharpCompress.Common;
 using SharpCompress.Common.Options;
 using SharpCompress.Writers;
 using SharpCompress.Writers.SevenZip;
+using SharpCompress.Compressors.LZMA;
 using SharpCompress.Readers;
 
 namespace ArcZipWindows;
@@ -111,7 +112,16 @@ public sealed class ZipArchiveService
     {
         var ext = Path.GetExtension(path);
         if (ext.Equals(".7z", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.SevenZip, new SevenZipWriterOptions(CompressionType.LZMA2) { CompressionLevel = Math.Clamp(compressionLevel, 0, 9) });
+        {
+            var level = Math.Clamp(compressionLevel, 0, 9);
+            var dictionarySize = level <= 1 ? 1 << 18 : level <= 4 ? 1 << 20 : level <= 7 ? 1 << 22 : 1 << 23;
+            var fastBytes = level <= 1 ? 16 : level <= 4 ? 32 : 64;
+            return (ArchiveType.SevenZip, new SevenZipWriterOptions(CompressionType.LZMA2)
+            {
+                CompressionLevel = level,
+                LzmaProperties = new LzmaEncoderProperties(false, dictionarySize, fastBytes)
+            });
+        }
         if (ext.Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
             return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.GZip).WithCompressionLevel(Math.Clamp(compressionLevel, 0, 9)));
