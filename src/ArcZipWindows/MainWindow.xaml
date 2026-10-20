@@ -20,7 +20,7 @@
    <DockPanel>
     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
      <Button Content="API: Start" Click="Api_Click" x:Name="ApiButton" Background="#E0EAFE" Foreground="#1D4ED8"/>
-     <Button Content="Create ZIP" Click="Create_Click" Background="#315EFB" Foreground="White"/>
+     <Button Content="Create archive" Click="Create_Click" Background="#315EFB" Foreground="White"/><Button Content="Create from folder" Click="CreateFromFolder_Click"/><TextBlock Text="Compression" VerticalAlignment="Center" Margin="6,0,2,0"/><ComboBox x:Name="CompressionLevelBox" Width="105" SelectedIndex="1" VerticalAlignment="Center"><ComboBoxItem Content="Fast"/><ComboBoxItem Content="Balanced"/><ComboBoxItem Content="Maximum"/></ComboBox>
      <Button Content="Open archive" Click="Open_Click" Background="#172033" Foreground="White"/>
     </StackPanel>
     <StackPanel>
@@ -46,7 +46,7 @@
    </DockPanel>
   </Border>
   <Border DockPanel.Dock="Bottom" Background="White" BorderBrush="#E5EAF2" BorderThickness="0,1,0,0" Padding="14,7">
-   <DockPanel><TextBlock x:Name="StatusText" Text="Ready" Foreground="#64748B" VerticalAlignment="Center"/><TextBlock Text="Multi-format archive workspace · API is opt-in" Foreground="#94A3B8" DockPanel.Dock="Right" VerticalAlignment="Center"/></DockPanel>
+   <DockPanel><TextBlock Text="Multi-format archive workspace · API is opt-in" Foreground="#94A3B8" DockPanel.Dock="Right" VerticalAlignment="Center"/><Button x:Name="CancelOperationButton" Content="Cancel" Click="CancelOperation_Click" IsEnabled="False" DockPanel.Dock="Right" Padding="10,4"/><ProgressBar x:Name="OperationProgressBar" Width="150" Height="8" Margin="8,0" VerticalAlignment="Center" Visibility="Collapsed" DockPanel.Dock="Right"/><TextBlock x:Name="StatusText" Text="Ready" Foreground="#64748B" VerticalAlignment="Center"/></DockPanel>
   </Border>
   <Border Margin="16" Background="White" BorderBrush="#E5EAF2" BorderThickness="1" CornerRadius="12" Padding="4">
    <DataGrid x:Name="EntriesGrid" MouseDoubleClick="EntriesGrid_MouseDoubleClick" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" CanUserAddRows="False" Background="White" BorderThickness="0" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEF1F6" RowHeight="42" HeadersVisibility="Column">
