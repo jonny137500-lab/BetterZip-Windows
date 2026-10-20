@@ -3,6 +3,7 @@ namespace ArcZipWindows;
 public sealed class ArchiveEntryRow
 {
  public string Name { get; init; } = "";
+ public string DisplayName { get; init; } = "";
  public string Kind { get; init; } = "File";
  public long Length { get; init; }
  public long? CompressedLength { get; init; }
