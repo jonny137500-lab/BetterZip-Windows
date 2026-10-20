@@ -104,6 +104,14 @@ public sealed class LocalApiServer : IAsyncDisposable
             var path = uri.AbsolutePath.TrimEnd('/');
             if (request.Method == "GET" && path == "/api/v1/health")
             { await WriteResponseAsync(stream, 200, new { name = "ArcZip Windows API", version = "v1", status = "ok" }); return; }
+            if (request.Method == "POST" && path == "/api/v1/archive/verify")
+            {
+                if (request.Body.Length == 0) { await WriteResponseAsync(stream, 400, new { error = "A JSON request body is required." }); return; }
+                var verifyBody = JsonSerializer.Deserialize<ApiRequest>(request.Body, JsonOptions) ?? new ApiRequest();
+                Require(verifyBody.ArchivePath, "archivePath");
+                var verifiedEntries = _archives.Verify(verifyBody.ArchivePath!);
+                await WriteResponseAsync(stream, 200, new { ok = true, verifiedEntries }); return;
+            }
             if (request.Method == "GET" && path == "/api/v1/archive/entries")
             {
                 var archive = QueryValue(uri.Query, "path");
