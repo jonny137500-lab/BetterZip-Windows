@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Collections.Concurrent;
 using SharpCompress.Archives;
 using SharpCompress.Common;
+using SharpCompress.Common.Options;
 using SharpCompress.Writers;
 using SharpCompress.Writers.SevenZip;
 using SharpCompress.Readers;
@@ -106,7 +107,7 @@ public sealed class ZipArchiveService
         }
     }
 
-    private static (ArchiveType Type, WriterOptions Options) GetWriterSettings(string path, int compressionLevel = 6)
+    private static (ArchiveType Type, IWriterOptions Options) GetWriterSettings(string path, int compressionLevel = 6)
     {
         var ext = Path.GetExtension(path);
         if (ext.Equals(".7z", StringComparison.OrdinalIgnoreCase))
