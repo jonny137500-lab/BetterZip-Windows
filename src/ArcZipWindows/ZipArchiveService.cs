@@ -36,7 +36,8 @@ public sealed class ZipArchiveService
     private static bool UsesSequentialReader(string path)
     {
         var ext = Path.GetExtension(path);
-        return ext.Equals(".gz", StringComparison.OrdinalIgnoreCase) ||
+        return ext.Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
+               ext.Equals(".gz", StringComparison.OrdinalIgnoreCase) ||
                ext.Equals(".bz2", StringComparison.OrdinalIgnoreCase) ||
                ext.Equals(".xz", StringComparison.OrdinalIgnoreCase) ||
                ext.Equals(".lz", StringComparison.OrdinalIgnoreCase) ||
@@ -478,7 +479,7 @@ public sealed class ZipArchiveService
 
     public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password))
         {
             ExtractEntries(archivePath, names, outputDirectory);
             return;
