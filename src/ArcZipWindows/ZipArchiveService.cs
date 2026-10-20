@@ -246,33 +246,37 @@ public sealed class ZipArchiveService
     /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
     public int VerifyAny(string archivePath, string? password = null, IProgress<ArchiveProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath)) return Verify(archivePath);
+        var entries = ListAny(archivePath, password);
+        var totalBytes = entries.Where(entry => entry.Kind != "Folder").Sum(entry => entry.Length);
+        long completedBytes = 0;
+        var verified = 0;
         lock (Gate(archivePath))
         {
-            var verified = 0;
             if (UsesSequentialReader(archivePath))
             {
                 using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 while (reader.MoveToNextEntry())
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (reader.Entry.IsDirectory) continue;
                     using var input = reader.OpenEntryStream();
-                    input.CopyTo(Stream.Null);
+                    CopyWithProgress(input, Stream.Null, reader.Entry.Key ?? string.Empty, ref completedBytes, totalBytes, progress, cancellationToken);
                     verified++;
                 }
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
-                foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
+                using var archive = OpenArchiveWithParts(archivePath, password);
+                foreach (var entry in archive.Entries.Where(entry => !entry.IsDirectory))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     using var input = entry.OpenEntryStream();
-                    input.CopyTo(Stream.Null);
+                    CopyWithProgress(input, Stream.Null, entry.Key ?? string.Empty, ref completedBytes, totalBytes, progress, cancellationToken);
                     verified++;
                 }
             }
-            return verified;
         }
+        return verified;
     }
 
     public int Verify(string archivePath)
@@ -587,15 +591,18 @@ public sealed class ZipArchiveService
 
     public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory, string? password = null, IProgress<ArchiveProgress>? progress = null, CancellationToken cancellationToken = default)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath))
-        {
-            ExtractEntries(archivePath, names, outputDirectory);
-            return;
-        }
         var selected = names.ToHashSet(StringComparer.Ordinal);
+        var entries = ListAny(archivePath, password);
+        var folderPrefixes = selected.Where(name => name.EndsWith('/')).ToArray();
+        foreach (var entry in entries)
+            if (folderPrefixes.Any(folder => entry.Name.StartsWith(folder, StringComparison.Ordinal)))
+                selected.Add(entry.Name);
+
         var root = Path.GetFullPath(outputDirectory);
         Directory.CreateDirectory(root);
         var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        var totalBytes = entries.Where(entry => selected.Contains(entry.Name) && entry.Kind != "Folder").Sum(entry => entry.Length);
+        long completedBytes = 0;
         lock (Gate(archivePath))
         {
             if (UsesSequentialReader(archivePath))
@@ -603,6 +610,7 @@ public sealed class ZipArchiveService
                 using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 while (reader.MoveToNextEntry())
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var entry = reader.Entry;
                     var key = (entry.Key ?? string.Empty).Replace('\\', '/');
                     if (!selected.Contains(key)) continue;
@@ -611,21 +619,22 @@ public sealed class ZipArchiveService
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     using var input = reader.OpenEntryStream();
                     using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
-                    input.CopyTo(output);
+                    CopyWithProgress(input, output, key, ref completedBytes, totalBytes, progress, cancellationToken);
                 }
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
-                foreach (var entry in archive.Entries.Where(e => selected.Contains(e.Key ?? string.Empty)))
+                using var archive = OpenArchiveWithParts(archivePath, password);
+                foreach (var entry in archive.Entries.Where(entry => selected.Contains(entry.Key ?? string.Empty)))
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     var key = (entry.Key ?? string.Empty).Replace('\\', '/');
                     var target = GetSafeExtractionPath(root, prefix, key);
                     if (entry.IsDirectory) { Directory.CreateDirectory(target); continue; }
                     Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                     using var input = entry.OpenEntryStream();
                     using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
-                    input.CopyTo(output);
+                    CopyWithProgress(input, output, key, ref completedBytes, totalBytes, progress, cancellationToken);
                 }
             }
         }
