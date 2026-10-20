@@ -25,6 +25,18 @@ try
     service.AddFiles(archivePath, [inputB]);
     Check(service.List(archivePath).Any(x => x.Name == "beta.txt"), "add file");
 
+    var replacement = Path.Combine(root, "alpha.txt");
+    await File.WriteAllTextAsync(replacement, "replacement payload");
+    service.AddFiles(archivePath, [replacement]);
+    Check(service.List(archivePath).Count(x => x.Name == "alpha.txt") == 1, "adding same-name file replaces instead of duplicating entry");
+    var replacementExtract = Path.Combine(root, "replacement");
+    service.ExtractEntries(archivePath, ["alpha.txt"], replacementExtract);
+    Check(await File.ReadAllTextAsync(Path.Combine(replacementExtract, "alpha.txt")) == "replacement payload", "replacement content written");
+    var overwriteRejected = false;
+    try { service.Create(archivePath, [inputB]); }
+    catch (IOException) { overwriteRejected = true; }
+    Check(overwriteRejected, "create protects an existing destination by default");
+
     service.RenameEntry(archivePath, "beta.txt", "renamed.txt");
     Check(service.List(archivePath).Any(x => x.Name == "renamed.txt"), "rename entry");
 
