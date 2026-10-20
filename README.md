@@ -22,7 +22,7 @@ Early development. The current milestone implements multi-format archive desktop
 ### Not yet implemented / not verified
 - CI green status for the latest commit and smoke-test results (check Actions)
 - ISO/CAB and other formats
-- encrypted archives and password management
+- encrypted archive creation (reading encrypted ZIP/7z/RAR with a password is supported; password-protected ZIP writing is not available in the selected library)
 - split volumes and nested archive browsing
 - automatic background monitoring of external editor changes (current workflow requires clicking “Save back to ZIP”)
 - Windows Explorer context menu and file associations
