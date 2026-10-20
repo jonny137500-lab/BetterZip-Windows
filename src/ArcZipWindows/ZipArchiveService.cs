@@ -10,6 +10,24 @@ public sealed class ZipArchiveService
     private static readonly ConcurrentDictionary<string, object> PathLocks = new(StringComparer.OrdinalIgnoreCase);
     private static object Gate(string path) => PathLocks.GetOrAdd(Path.GetFullPath(path), _ => new object());
 
+    /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
+    public int Verify(string archivePath)
+    {
+        lock (Gate(archivePath))
+        {
+            using var archive = ZipFile.OpenRead(archivePath);
+            var verified = 0;
+            foreach (var entry in archive.Entries)
+            {
+                if (entry.FullName.EndsWith('/')) continue;
+                using var input = entry.Open();
+                input.CopyTo(Stream.Null);
+                verified++;
+            }
+            return verified;
+        }
+    }
+
     public IReadOnlyList<ArchiveEntryRow> List(string archivePath)
     {
         lock (Gate(archivePath))
