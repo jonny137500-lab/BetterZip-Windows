@@ -59,6 +59,35 @@ public sealed class ZipArchiveService
     public void AddFiles(string archivePath, IEnumerable<string> files)
     {
         var additions = files.Select(Path.GetFullPath).Select(file => (Path: file, EntryName: Path.GetFileName(file))).ToList();
+        AddEntries(archivePath, additions);
+    }
+
+    /// <summary>Add files and recursively add directory contents, retaining each selected directory name.</summary>
+    public void AddPaths(string archivePath, IEnumerable<string> paths)
+    {
+        var additions = new List<(string Path, string EntryName)>();
+        foreach (var input in paths.Select(Path.GetFullPath))
+        {
+            if (File.Exists(input))
+            {
+                additions.Add((input, Path.GetFileName(input)));
+                continue;
+            }
+            if (!Directory.Exists(input)) throw new FileNotFoundException("Input file or directory not found.", input);
+            var directoryName = new DirectoryInfo(input).Name;
+            foreach (var file in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(input, file).Replace(Path.DirectorySeparatorChar, '/');
+                additions.Add((file, $"{directoryName}/{relative}"));
+            }
+        }
+        AddEntries(archivePath, additions);
+    }
+
+    private void AddEntries(string archivePath, List<(string Path, string EntryName)> additions)
+    {
+        if (additions.Count == 0) return;
+        foreach (var item in additions) ValidateEntryName(item.EntryName);
         lock (Gate(archivePath))
         {
             var names = additions.Select(x => x.EntryName).ToHashSet(StringComparer.OrdinalIgnoreCase);
