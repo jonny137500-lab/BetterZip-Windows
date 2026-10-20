@@ -7,7 +7,7 @@ An independent Windows archive manager inspired by modern archive-workspace work
 Early development. The current milestone implements multi-format archive desktop operations and an opt-in local REST API. Full ArcZip feature parity is **not** complete.
 
 ### Implemented in source
-- Windows WPF desktop UI with search, open, create, add, extract selected/all, verify archive integrity, rename, delete, drag-and-drop files/folders, and command-line ZIP opening
+- Windows WPF desktop UI with search, open, create from files or folders, add, extract selected/all, verify archive integrity, rename, delete, drag-and-drop files/folders, and command-line ZIP opening
 - ZIP/7z/TAR/TAR.GZ creation streams file contents instead of buffering whole files
 - ZIP, 7z, RAR, TAR, and compound TAR compression formats can be listed, verified, and safely extracted; add/delete/rename/replace are supported for ZIP, 7z, TAR and TAR.GZ; RAR and other reader-only formats remain read-only
 - Add folders recursively while retaining relative paths; smoke-tested folder import and extraction in memory
@@ -22,7 +22,7 @@ Early development. The current milestone implements multi-format archive desktop
 ### Not yet implemented / not verified
 - CI green status for the latest commit and smoke-test results (check Actions)
 - ISO/CAB and other formats
-- encrypted archive creation (reading encrypted ZIP/7z/RAR with a password is supported; password-protected ZIP writing is not available in the selected library)
+- encrypted archive creation (reading encrypted ZIP/7z/RAR with a password is supported; creating password-protected archives is not yet supported)
 - split volumes and nested archive browsing
 - automatic background monitoring of external editor changes (current workflow requires clicking “Save back to ZIP”)
 - Windows Explorer integration is available as an optional installer task; it adds "Open with" entries without changing default associations
