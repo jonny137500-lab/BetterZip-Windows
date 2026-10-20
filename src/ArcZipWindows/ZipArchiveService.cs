@@ -78,6 +78,7 @@ public sealed class ZipArchiveService
                 rows.AddRange(archive.Entries.Select(e => new ArchiveEntryRow
                 {
                     Name = e.Key ?? string.Empty,
+                    DisplayName = e.Key ?? string.Empty,
                     Kind = e.IsDirectory ? "Folder" : "File",
                     Length = e.Size,
                     CompressedLength = e.CompressedSize,
@@ -195,6 +196,7 @@ public sealed class ZipArchiveService
             return archive.Entries.Select(e => new ArchiveEntryRow
             {
                 Name = e.FullName,
+                DisplayName = e.FullName,
                 Kind = e.FullName.EndsWith('/') ? "Folder" : "File",
                 Length = e.Length,
                 CompressedLength = e.CompressedLength,
