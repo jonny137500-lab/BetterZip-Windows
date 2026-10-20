@@ -3,7 +3,7 @@
 - No background service starts automatically. The REST API is opt-in and stops with the application.
 - Archive entries are listed without extracting their contents.
 - API requests are handled serially to cap concurrency and avoid two simultaneous rewrites of one archive.
-- ZIP edits rewrite to a temporary file and replace the original only after writing succeeds.
+- ZIP, 7z, TAR, and TAR.GZ edits rewrite to a temporary file and replace the original only after writing succeeds.
 - Large-file streaming uses streams rather than loading whole file contents into memory.
 - Multi-format reads use SharpCompress 0.50.6, which includes fixes for archive path traversal; extraction writes each entry through a validated output path.
 

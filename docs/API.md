@@ -13,7 +13,7 @@ Send it in every request as `Authorization: Bearer <token>`. Do not share the to
 - `GET /health` — health/version response.
 - `GET /archive/entries?path=C%3A%5Cpath%5Cfile.zip` — list supported archive entries.
 - `POST /archive/verify` — JSON: `{"archivePath":"C:\\out.zip"}`; streams each file entry to validate decompression/CRC across supported formats.
-- `POST /archive/create` — JSON: `{"destination":"C:\\out.zip","files":["C:\\in\\a.txt"],"overwrite":false}`. Existing destination files are protected unless `overwrite` is explicitly `true`.
+- `POST /archive/create` — JSON: `{"destination":"C:\\out.zip","files":["C:\\in\\a.txt"],"overwrite":false}`. Existing destination files are protected unless `overwrite` is explicitly `true`. Supports creating ZIP, 7z, TAR, and TAR.GZ.
 - `POST /archive/add` — JSON: `{"archivePath":"C:\\out.zip","files":["C:\\in\\b.txt"]}`. Each path may be a file or directory; directories are added recursively under their selected folder name.
 - `POST /archive/delete` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"]}`.
 - `POST /archive/rename` — JSON: `{"archivePath":"C:\\out.zip","oldName":"a.txt","newName":"renamed.txt"}`.
@@ -32,3 +32,6 @@ Invoke-RestMethod -Headers $headers -Uri ('http://127.0.0.1:47821/api/v1/archive
 ```
 
 This API is a local desktop integration interface, not a remote/network service. It has not undergone a security audit.
+
+
+Archive mutation endpoints (add/delete/rename/replace) support ZIP, 7z, TAR, and TAR.GZ. RAR, ACE/ARJ, and compressed-stream-only formats are read-only.
