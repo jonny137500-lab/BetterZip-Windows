@@ -7,7 +7,7 @@ An independent Windows archive manager inspired by modern archive-workspace work
 Early development. The current milestone implements ZIP-only desktop operations and an opt-in local REST API. Full ArcZip feature parity is **not** complete.
 
 ### Implemented in source
-- Windows WPF desktop UI with search, open, create, add, extract selected/all, rename, delete, drag-and-drop files/folders, and command-line ZIP opening
+- Windows WPF desktop UI with search, open, create, add, extract selected/all, verify ZIP integrity, rename, delete, drag-and-drop files/folders, and command-line ZIP opening
 - ZIP operations stream file contents instead of buffering whole files
 - Add folders recursively while retaining relative paths; smoke-tested folder import and extraction in memory
 - Export an entry to the default external editor and explicitly save the edited file back into the ZIP
