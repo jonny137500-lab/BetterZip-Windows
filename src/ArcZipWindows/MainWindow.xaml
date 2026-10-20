@@ -32,7 +32,7 @@
    <DockPanel LastChildFill="True">
     <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
      <Button Content="Add files" Click="Add_Click"/>
-     <Button Content="Extract selected" Click="Extract_Click"/>
+     <Button Content="Extract selected" Click="Extract_Click"/><Button Content="Edit externally" Click="EditExternally_Click"/><Button x:Name="SaveBackButton" Content="Save back to ZIP" Click="SaveBack_Click" IsEnabled="False" Background="#DDF7E8" Foreground="#166534"/>
      <Button Content="Rename" Click="Rename_Click"/>
      <Button Content="Delete" Click="Delete_Click" Background="#FDECEC" Foreground="#B42318"/>
     </StackPanel>
