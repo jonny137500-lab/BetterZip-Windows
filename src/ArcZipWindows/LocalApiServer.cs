@@ -115,7 +115,7 @@ public sealed class LocalApiServer : IAsyncDisposable
                 {
                     case "/api/v1/archive/create":
                         Require(body.Destination, "destination");
-                        _archives.Create(body.Destination!, body.Files ?? []);
+                        _archives.Create(body.Destination!, body.Files ?? [], body.Overwrite);
                         await WriteResponseAsync(stream, 200, new { ok = true, destination = body.Destination }); return;
                     case "/api/v1/archive/add":
                         Require(body.ArchivePath, "archivePath");
@@ -237,5 +237,6 @@ public sealed class LocalApiServer : IAsyncDisposable
         public string? NewName { get; set; }
         public string[]? Files { get; set; }
         public string[]? Entries { get; set; }
+        public bool Overwrite { get; set; }
     }
 }
