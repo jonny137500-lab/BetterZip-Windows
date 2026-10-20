@@ -48,7 +48,7 @@
    <DockPanel><TextBlock x:Name="StatusText" Text="Ready" Foreground="#64748B" VerticalAlignment="Center"/><TextBlock Text="ZIP workspace · API is opt-in" Foreground="#94A3B8" DockPanel.Dock="Right" VerticalAlignment="Center"/></DockPanel>
   </Border>
   <Border Margin="16" Background="White" BorderBrush="#E5EAF2" BorderThickness="1" CornerRadius="12" Padding="4">
-   <DataGrid x:Name="EntriesGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" CanUserAddRows="False" Background="White" BorderThickness="0" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEF1F6" RowHeight="42" HeadersVisibility="Column" SelectionBrush="#DBEAFE">
+   <DataGrid x:Name="EntriesGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" CanUserAddRows="False" Background="White" BorderThickness="0" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEF1F6" RowHeight="42" HeadersVisibility="Column">
     <DataGrid.Columns>
      <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" MinWidth="280"/>
      <DataGridTextColumn Header="TYPE" Binding="{Binding Kind}" Width="100"/>
