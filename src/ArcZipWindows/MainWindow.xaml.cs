@@ -1,6 +1,7 @@
 using System.IO;
 using Microsoft.Win32;
 using System.IO.Compression;
+using System.Diagnostics;
 using System.Windows;
 using System.Windows.Controls;
 
@@ -11,12 +12,15 @@ public partial class MainWindow : Window
     private readonly ZipArchiveService service = new();
     private readonly LocalApiServer apiServer;
     private string? archivePath;
+    private string? pendingEditArchivePath;
+    private string? pendingEditEntryName;
+    private string? pendingEditFile;
 
     public MainWindow()
     {
         InitializeComponent();
         apiServer = new LocalApiServer(service);
-        Closed += async (_, _) => await apiServer.StopAsync();
+        Closed += async (_, _) => { await apiServer.StopAsync(); CleanupPendingEdit(); };
     }
 
     private void Open_Click(object sender, RoutedEventArgs e)
@@ -104,6 +108,71 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true) return;
         try { service.RenameEntry(archivePath!, row.Name, dialog.NewName); RefreshEntries(); StatusText.Text = "Entry renamed"; }
         catch (Exception ex) { ShowError(ex); }
+    }
+
+
+    private void EditExternally_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireArchive()) return;
+        var row = SelectedRows().FirstOrDefault();
+        if (row is null) { MessageBox.Show("Select one file to edit."); return; }
+        if (row.Kind == "Folder") { MessageBox.Show("Select a file, not a folder."); return; }
+        if (pendingEditFile is not null && File.Exists(pendingEditFile))
+        {
+            var answer = MessageBox.Show("There is already an unsaved external edit. Discard it and open another file?", "Pending edit",
+                MessageBoxButton.YesNo, MessageBoxImage.Warning);
+            if (answer != MessageBoxResult.Yes) return;
+            CleanupPendingEdit();
+        }
+        try
+        {
+            var editDirectory = Path.Combine(Path.GetTempPath(), "ArcZipWindows", Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(editDirectory);
+            var extension = Path.GetExtension(row.Name);
+            var tempFile = Path.Combine(editDirectory, "edit" + extension);
+            service.ExportEntryToFile(archivePath!, row.Name, tempFile);
+            Process.Start(new ProcessStartInfo(tempFile) { UseShellExecute = true });
+            pendingEditArchivePath = archivePath;
+            pendingEditEntryName = row.Name;
+            pendingEditFile = tempFile;
+            SaveBackButton.IsEnabled = true;
+            StatusText.Text = $"Editing {row.Name} externally. Save in that app, then click Save back to ZIP.";
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private void SaveBack_Click(object sender, RoutedEventArgs e)
+    {
+        if (pendingEditArchivePath is null || pendingEditEntryName is null || pendingEditFile is null || !File.Exists(pendingEditFile))
+        {
+            MessageBox.Show("No pending external edit was found.");
+            CleanupPendingEdit();
+            return;
+        }
+        try
+        {
+            service.ReplaceEntry(pendingEditArchivePath, pendingEditEntryName, pendingEditFile);
+            if (string.Equals(archivePath, pendingEditArchivePath, StringComparison.OrdinalIgnoreCase)) RefreshEntries();
+            StatusText.Text = $"Saved changes to {pendingEditEntryName}";
+            CleanupPendingEdit();
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private void CleanupPendingEdit()
+    {
+        var file = pendingEditFile;
+        pendingEditArchivePath = null;
+        pendingEditEntryName = null;
+        pendingEditFile = null;
+        if (SaveBackButton is not null) SaveBackButton.IsEnabled = false;
+        if (file is null) return;
+        try
+        {
+            var directory = Path.GetDirectoryName(file);
+            if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+        catch { }
     }
 
     private void Api_Click(object sender, RoutedEventArgs e)
