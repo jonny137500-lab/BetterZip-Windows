@@ -25,7 +25,7 @@ Early development. The current milestone implements multi-format archive desktop
 - encrypted archive creation (reading encrypted ZIP/7z/RAR with a password is supported; password-protected ZIP writing is not available in the selected library)
 - split volumes and nested archive browsing
 - automatic background monitoring of external editor changes (current workflow requires clicking “Save back to ZIP”)
-- Windows Explorer context menu and file associations
+- Windows Explorer integration is available as an optional installer task; it adds "Open with" entries without changing default associations
 - code signing, update channel, accessibility review and localization
 - benchmarks, load testing, fuzzing and security audit
 - guaranteed memory/CPU figures (must be measured; zero memory use is impossible)
