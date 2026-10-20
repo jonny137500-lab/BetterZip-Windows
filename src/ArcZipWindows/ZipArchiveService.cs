@@ -157,6 +157,10 @@ public sealed class ZipArchiveService
             }
         }
 
+        var duplicateEntry = entries.GroupBy(item => item.EntryName, StringComparer.OrdinalIgnoreCase).FirstOrDefault(group => group.Count() > 1);
+        if (duplicateEntry is not null)
+            throw new IOException($"Multiple selected inputs map to the same archive entry '{duplicateEntry.Key}'. Select their parent folder to preserve paths.");
+
         lock (Gate(fullPath))
         {
             if (File.Exists(fullPath) && !overwrite)
@@ -366,6 +370,9 @@ public sealed class ZipArchiveService
     {
         if (additions.Count == 0) return;
         foreach (var item in additions) ValidateEntryName(item.EntryName);
+        var duplicate = additions.GroupBy(item => item.EntryName, StringComparer.OrdinalIgnoreCase).FirstOrDefault(group => group.Count() > 1);
+        if (duplicate is not null)
+            throw new IOException($"Multiple inputs map to the same archive entry '{duplicate.Key}'.");
         lock (Gate(archivePath))
         {
             var names = additions.Select(x => x.EntryName).ToHashSet(StringComparer.OrdinalIgnoreCase);
@@ -399,6 +406,8 @@ public sealed class ZipArchiveService
             var isFolder = oldName.EndsWith('/');
             var oldPrefix = isFolder ? oldName.TrimEnd('/') + "/" : oldName;
             var newPrefix = isFolder ? newName.TrimEnd('/') + "/" : newName;
+            if (isFolder && newPrefix.StartsWith(oldPrefix, StringComparison.Ordinal))
+                throw new ArgumentException("A folder cannot be renamed into itself or one of its descendants.");
             if (!entries.Any(e => e.Name == oldName || (isFolder && e.Name.StartsWith(oldPrefix, StringComparison.Ordinal))))
                 throw new FileNotFoundException($"Archive entry not found: {oldName}");
             if (entries.Any(e => (e.Name == newName || (isFolder && e.Name.StartsWith(newPrefix, StringComparison.Ordinal))) && !e.Name.StartsWith(oldPrefix, StringComparison.Ordinal)))
