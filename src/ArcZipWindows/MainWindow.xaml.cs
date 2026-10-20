@@ -336,9 +336,9 @@ public partial class MainWindow : Window
         if (!RequireArchive()) return;
         var row = SelectedRows().FirstOrDefault();
         if (row is null) { MessageBox.Show("Select one entry to rename."); return; }
-        var dialog = new RenameWindow(row.Name) { Owner = this };
+        var dialog = new RenameWindow(row.DisplayName) { Owner = this };
         if (dialog.ShowDialog() != true) return;
-        try { service.RenameEntry(archivePath!, row.Name, dialog.NewName); RefreshEntries(); StatusText.Text = "Entry renamed"; }
+        try { var newName = currentFolderPrefix + dialog.NewName + (row.Kind == "Folder" ? "/" : ""); service.RenameEntry(archivePath!, row.Name, newName); RefreshEntries(); StatusText.Text = "Entry renamed"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
