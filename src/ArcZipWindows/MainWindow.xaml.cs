@@ -54,7 +54,17 @@ public partial class MainWindow : Window
             var fullPath = Path.GetFullPath(path);
             string? password = null;
             IReadOnlyList<ArchiveEntryRow> entries;
-            try { entries = service.ListAny(fullPath); }
+            try
+            {
+                entries = service.ListAny(fullPath);
+                if (entries.Any(entry => entry.IsEncrypted))
+                {
+                    var prompt = new PasswordPromptWindow(Path.GetFileName(fullPath)) { Owner = this };
+                    if (prompt.ShowDialog() != true) return false;
+                    password = prompt.Password;
+                    entries = service.ListAny(fullPath, password);
+                }
+            }
             catch
             {
                 var ext = Path.GetExtension(fullPath);
@@ -147,6 +157,7 @@ public partial class MainWindow : Window
                 Name = entry.Name,
                 DisplayName = relative,
                 Kind = entry.Kind,
+                IsEncrypted = entry.IsEncrypted,
                 Length = entry.Length,
                 CompressedLength = entry.CompressedLength,
                 Modified = entry.Modified
