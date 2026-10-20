@@ -279,7 +279,17 @@ public sealed class ZipArchiveService
     {
         var remove = names.ToHashSet(StringComparer.Ordinal);
         if (remove.Count == 0) return;
-        lock (Gate(archivePath)) RewriteAny(archivePath, name => remove.Contains(name) ? null : name, []);
+        lock (Gate(archivePath))
+        {
+            var folderPrefixes = remove.Where(name => name.EndsWith('/')).ToArray();
+            if (folderPrefixes.Length > 0)
+            {
+                foreach (var entry in ListAny(archivePath))
+                    if (folderPrefixes.Any(prefix => entry.Name.StartsWith(prefix, StringComparison.Ordinal)))
+                        remove.Add(entry.Name);
+            }
+            RewriteAny(archivePath, name => remove.Contains(name) ? null : name, []);
+        }
     }
 
     public void RenameEntry(string archivePath, string oldName, string newName)
@@ -288,10 +298,19 @@ public sealed class ZipArchiveService
         lock (Gate(archivePath))
         {
             var entries = ListAny(archivePath);
-            if (!entries.Any(e => e.Name == oldName)) throw new FileNotFoundException($"Archive entry not found: {oldName}");
-            if (entries.Any(e => e.Name == newName && e.Name != oldName))
+            var isFolder = oldName.EndsWith('/');
+            var oldPrefix = isFolder ? oldName.TrimEnd('/') + "/" : oldName;
+            var newPrefix = isFolder ? newName.TrimEnd('/') + "/" : newName;
+            if (!entries.Any(e => e.Name == oldName || (isFolder && e.Name.StartsWith(oldPrefix, StringComparison.Ordinal))))
+                throw new FileNotFoundException($"Archive entry not found: {oldName}");
+            if (entries.Any(e => (e.Name == newName || (isFolder && e.Name.StartsWith(newPrefix, StringComparison.Ordinal))) && !e.Name.StartsWith(oldPrefix, StringComparison.Ordinal)))
                 throw new IOException($"An entry named '{newName}' already exists.");
-            RewriteAny(archivePath, name => name == oldName ? newName : name, []);
+            RewriteAny(archivePath, name =>
+            {
+                if (isFolder && name.StartsWith(oldPrefix, StringComparison.Ordinal))
+                    return newPrefix + name[oldPrefix.Length..];
+                return name == oldName ? newName : name;
+            }, []);
         }
     }
 
