@@ -91,30 +91,44 @@ public sealed class ZipArchiveService
         }
     }
 
-    private static (ArchiveType Type, WriterOptions Options) GetWriterSettings(string path)
+    private static (ArchiveType Type, WriterOptions Options) GetWriterSettings(string path, int compressionLevel = 6)
     {
         var ext = Path.GetExtension(path);
         if (ext.Equals(".7z", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.SevenZip, new SevenZipWriterOptions(CompressionType.LZMA2));
+            return (ArchiveType.SevenZip, new SevenZipWriterOptions(CompressionType.LZMA2) { CompressionLevel = Math.Clamp(compressionLevel, 0, 9) });
         if (ext.Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
             path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.GZip));
+            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.GZip).WithCompressionLevel(Math.Clamp(compressionLevel, 0, 9)));
         if (ext.Equals(".tar", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.None));
+            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.None).WithCompressionLevel(Math.Clamp(compressionLevel, 0, 9)));
         throw new NotSupportedException("Writing this format is not supported. Use ZIP, 7z, TAR or TAR.GZ.");
     }
 
 
+    private static System.IO.Compression.CompressionLevel MapZipCompressionLevel(int level) =>
+        level <= 1 ? System.IO.Compression.CompressionLevel.Fastest :
+        level >= 9 ? System.IO.Compression.CompressionLevel.SmallestSize :
+        System.IO.Compression.CompressionLevel.Optimal;
+
+    /// <summary>Creates an archive from files and/or folders, retaining folder-relative paths.</summary>
+    public void CreateFromPathsAny(string destination, IEnumerable<string> paths, bool overwrite = false, int compressionLevel = 6)
+    {
+        var fullPath = Path.GetFullPath(destination);
+        var inputs = paths.Select(Path.GetFullPath).ToList();
+        CreateAny(fullPath, [], overwrite, compressionLevel);
+        if (inputs.Count > 0) AddPaths(fullPath, inputs);
+    }
+
     /// <summary>Creates ZIP, 7z, TAR and TAR.GZ archives.</summary>
-    public void CreateAny(string destination, IEnumerable<string> files, bool overwrite = false)
+    public void CreateAny(string destination, IEnumerable<string> files, bool overwrite = false, int compressionLevel = 6)
     {
         var fullPath = Path.GetFullPath(destination);
         if (Path.GetExtension(fullPath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
         {
-            Create(fullPath, files, overwrite);
+            Create(fullPath, files, overwrite, MapZipCompressionLevel(compressionLevel));
             return;
         }
-        var (type, options) = GetWriterSettings(fullPath);
+        var (type, options) = GetWriterSettings(fullPath, compressionLevel);
         lock (Gate(fullPath))
         {
             if (File.Exists(fullPath) && !overwrite)
@@ -207,7 +221,7 @@ public sealed class ZipArchiveService
         }
     }
 
-    public void Create(string destination, IEnumerable<string> files, bool overwrite = false)
+    public void Create(string destination, IEnumerable<string> files, bool overwrite = false, System.IO.Compression.CompressionLevel compressionLevel = System.IO.Compression.CompressionLevel.Optimal)
     {
         var fullPath = Path.GetFullPath(destination);
         lock (Gate(fullPath))
