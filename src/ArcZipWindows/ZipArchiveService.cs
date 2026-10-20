@@ -227,7 +227,7 @@ public sealed class ZipArchiveService
     }
 
     /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
-    public int VerifyAny(string archivePath, string? password = null)
+    public int VerifyAny(string archivePath, string? password = null, IProgress<ArchiveProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath)) return Verify(archivePath);
         lock (Gate(archivePath))
@@ -563,7 +563,7 @@ public sealed class ZipArchiveService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
-    public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory, string? password = null)
+    public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory, string? password = null, IProgress<ArchiveProgress>? progress = null, CancellationToken cancellationToken = default)
     {
         if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath))
         {
@@ -606,6 +606,20 @@ public sealed class ZipArchiveService
                     input.CopyTo(output);
                 }
             }
+        }
+    }
+
+    private static void CopyWithProgress(Stream input, Stream output, string entryName, ref long completedBytes,
+        long totalBytes, IProgress<ArchiveProgress>? progress, CancellationToken cancellationToken)
+    {
+        var buffer = new byte[128 * 1024];
+        int read;
+        while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            output.Write(buffer, 0, read);
+            completedBytes += read;
+            progress?.Report(new ArchiveProgress(entryName, completedBytes, totalBytes));
         }
     }
 
