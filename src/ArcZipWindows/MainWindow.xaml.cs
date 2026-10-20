@@ -152,6 +152,19 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex); }
     }
 
+    private void Verify_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireArchive()) return;
+        try
+        {
+            StatusText.Text = "Verifying archive data and CRC checks…";
+            var count = service.Verify(archivePath!);
+            StatusText.Text = $"Verified {count} file entries; no corruption detected";
+            MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "ZIP verification", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
     private void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
