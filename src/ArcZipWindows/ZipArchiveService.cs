@@ -70,7 +70,6 @@ public sealed class ZipArchiveService
     /// <summary>Lists supported archive formats without extracting file contents.</summary>
     public IReadOnlyList<ArchiveEntryRow> ListAny(string archivePath, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath)) return List(archivePath);
         lock (Gate(archivePath))
         {
             var rows = new List<ArchiveEntryRow>();
@@ -83,7 +82,9 @@ public sealed class ZipArchiveService
                     rows.Add(new ArchiveEntryRow
                     {
                         Name = entry.Key ?? string.Empty,
+                        DisplayName = entry.Key ?? string.Empty,
                         Kind = entry.IsDirectory ? "Folder" : "File",
+                        IsEncrypted = entry.IsEncrypted,
                         Length = entry.Size,
                         CompressedLength = entry.CompressedSize,
                         Modified = entry.LastModifiedTime is DateTime time ? new DateTimeOffset(time) : null
@@ -98,6 +99,7 @@ public sealed class ZipArchiveService
                     Name = e.Key ?? string.Empty,
                     DisplayName = e.Key ?? string.Empty,
                     Kind = e.IsDirectory ? "Folder" : "File",
+                    IsEncrypted = e.IsEncrypted,
                     Length = e.Size,
                     CompressedLength = e.CompressedSize,
                     Modified = e.LastModifiedTime is DateTime time ? new DateTimeOffset(time) : null
