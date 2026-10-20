@@ -230,6 +230,9 @@ public partial class MainWindow : Window
         if (!ZipArchiveService.CanReadFormat(row.Name)) return;
         var parentPath = archivePath;
         var parentLabel = ArchiveLabel.Text;
+        var parentPassword = currentArchivePassword;
+        var parentPrefix = currentFolderPrefix;
+        var parentReadOnlyBefore = nestedReadOnly;
         var directory = Path.Combine(Path.GetTempPath(), "ArcZipWindows", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         var nestedPath = Path.Combine(directory, Path.GetFileName(row.Name));
@@ -247,9 +250,9 @@ public partial class MainWindow : Window
                 nestedTempFiles.Remove(nestedPath);
                 try { Directory.Delete(directory, recursive: true); } catch { }
                 archivePath = parentPath;
-                currentArchivePassword = navigationStack.Count > 0 ? navigationStack.Peek().Password : null;
-                currentFolderPrefix = navigationStack.Count > 0 ? navigationStack.Peek().FolderPrefix : "";
-                nestedReadOnly = navigationStack.Count > 0 && navigationStack.Peek().ReadOnly;
+                currentArchivePassword = parentPassword;
+                currentFolderPrefix = parentPrefix;
+                nestedReadOnly = parentReadOnlyBefore;
                 ArchiveLabel.Text = parentLabel;
                 RefreshEntries();
                 UpdateArchiveCapabilities();
@@ -263,6 +266,9 @@ public partial class MainWindow : Window
             nestedTempFiles.Remove(nestedPath);
             try { Directory.Delete(directory, recursive: true); } catch { }
             archivePath = parentPath;
+            currentArchivePassword = parentPassword;
+            currentFolderPrefix = parentPrefix;
+            nestedReadOnly = parentReadOnlyBefore;
             ArchiveLabel.Text = parentLabel;
             ShowError(ex);
         }
