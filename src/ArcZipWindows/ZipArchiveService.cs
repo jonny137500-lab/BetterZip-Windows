@@ -15,7 +15,7 @@ public sealed class ZipArchiveService
 
     private static readonly HashSet<string> ReadableExtensions = new(StringComparer.OrdinalIgnoreCase)
     {
-        ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".lz", ".zst", ".ar", ".arj", ".ace", ".lzw"
+        ".zip", ".7z", ".rar", ".tar", ".tgz", ".ar", ".arj", ".ace"
     };
 
     public static bool CanReadFormat(string path) => ReadableExtensions.Contains(Path.GetExtension(path));
