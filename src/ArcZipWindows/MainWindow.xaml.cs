@@ -429,6 +429,25 @@ public partial class MainWindow : Window
     }
 
 
+    private async void Preview_Click(object sender, RoutedEventArgs e)
+    {
+        var row = SelectedRows().FirstOrDefault();
+        if (row is null || row.Kind == "Folder" || !RequireArchive()) return;
+        var directory = Path.Combine(Path.GetTempPath(), "ArcZipWindows", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var tempFile = Path.Combine(directory, Path.GetFileName(row.Name));
+        try
+        {
+            await RunBusyAsync("Preparing preview…", () => service.ExportEntryToFile(archivePath!, row.Name, tempFile, currentArchivePassword));
+            new ArchivePreviewWindow(row.DisplayName, tempFile) { Owner = this }.ShowDialog();
+        }
+        catch (Exception ex)
+        {
+            try { Directory.Delete(directory, recursive: true); } catch { }
+            ShowError(ex);
+        }
+    }
+
     private async void EditExternally_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
