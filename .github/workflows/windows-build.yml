@@ -5,6 +5,9 @@ on:
   workflow_dispatch:
 permissions:
   contents: read
+concurrency:
+  group: arc-zip-windows-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
   build:
     runs-on: windows-latest
@@ -17,5 +20,13 @@ jobs:
         run: dotnet restore src/ArcZipWindows/ArcZipWindows.csproj
       - name: Build application
         run: dotnet build src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --no-restore
-      - name: Run ZIP smoke tests
+      - name: Run ZIP and local API smoke tests
         run: dotnet run --project tests/ArcZipWindows.SmokeTests/ArcZipWindows.SmokeTests.csproj --configuration Release
+      - name: Publish self-contained Windows x64 app
+        run: dotnet publish src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --runtime win-x64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/ArcZipWindows-win-x64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArcZip-Windows-win-x64
+          path: artifacts/ArcZipWindows-win-x64/
+          if-no-files-found: error
+          retention-days: 14
