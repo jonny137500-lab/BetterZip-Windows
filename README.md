@@ -1,34 +1,33 @@
 # ArcZip Windows
 
-An independent Windows archive manager inspired by modern archive-workspace workflows. Not affiliated with ArcZip or BetterZip.
+An independent Windows archive manager built around a modern archive-workspace workflow. Not affiliated with ArcZip or BetterZip.
 
 ## Current status
 
-Early development. The current milestone implements multi-format archive desktop operations and an opt-in local REST API. Full ArcZip feature parity is **not** complete.
+Early development. The core desktop app and local API are implemented, but full commercial-app feature parity is **not** complete. Builds and automated tests are run on Windows through GitHub Actions.
 
-### Implemented in source
-- Windows WPF desktop UI with search, open, create, add, extract selected/all, verify ZIP integrity, rename, delete, drag-and-drop files/folders, and command-line ZIP opening
-- ZIP/7z/TAR/TAR.GZ creation streams file contents instead of buffering whole files
-- ZIP, 7z, RAR, TAR, and compound TAR compression formats can be listed, verified, and safely extracted; write/edit operations remain ZIP-only except creating 7z/TAR/TAR.GZ
-- Add folders recursively while retaining relative paths; smoke-tested folder import and extraction in memory
-- Export an entry to the default external editor and explicitly save the edited file back into the ZIP
-- Local API supports replacing nested entry contents
-- Edits rewrite to a temporary archive before replacing the original
-- Safer extraction that rejects path traversal
-- ZIP entry operations serialized per archive path to reduce concurrent rewrite races
-- Optional local REST API, loopback-only, bearer token required, off by default
-- GitHub Actions build, ZIP/API smoke tests, self-contained x64 build, and installer artifact
+### Implemented
+- Windows WPF UI with search, drag-and-drop files/folders, folder navigation, nested archive browsing, and command-line opening of supported archive formats.
+- Create archives from files or folders while preserving relative paths.
+- Create and modify ZIP, 7z, TAR and TAR.GZ/TGZ archives: add, replace, rename, delete, extract selected/all, and verify integrity.
+- Read/list/extract common additional formats supported by SharpCompress, including RAR and compressed TAR formats; RAR/ACE/ARJ and stream-only formats are read-only.
+- Read encrypted ZIP/7z/RAR archives with a password prompt or the password-aware local API. Passwords are kept in memory for the current open session and are not persisted by ArcZip.
+- Compression profiles (Fast, Balanced, Maximum), with compressed size and space-saved metadata.
+- Bounded text and image previews, plus open-in-default-app and external editing.
+- Nested archive edits are written back to a writable parent archive when navigating back out.
+- Background archive work; extraction and integrity verification report byte progress and can be cancelled.
+- Safe extraction path checks, temporary-file rewrite/replace for archive edits, and per-archive operation locking.
+- Optional Explorer "Open with ArcZip Windows" integration in the installer. It does not change default file associations unless the user changes them separately.
+- Opt-in, loopback-only local REST API with per-run bearer-token authentication. The API is off by default.
+- GitHub Actions Windows build, smoke tests, self-contained x64 app artifact, and installer artifact.
 
-### Not yet implemented / not verified
-- CI green status for the latest commit and smoke-test results (check Actions)
-- ISO/CAB and other formats
-- encrypted archives and password management
-- split volumes and nested archive browsing
-- automatic background monitoring of external editor changes (current workflow requires clicking “Save back to ZIP”)
-- Windows Explorer context menu and file associations
-- code signing, update channel, accessibility review and localization
-- benchmarks, load testing, fuzzing and security audit
-- guaranteed memory/CPU figures (must be measured; zero memory use is impossible)
+### Not implemented or not yet verified
+- Creating password-protected archives.
+- Creating split-volume archives (some existing multi-volume archives can be read when the first volume is opened).
+- ISO/CAB and any format not supported by the archive engine.
+- Automatic monitoring of external editor saves; external edits still require an explicit save-back action.
+- Code signing, auto-update, full accessibility/localization review, fuzzing, independent security audit, and representative performance benchmarks.
+- Guaranteed memory/CPU figures. Streaming avoids loading entire files into memory, but it does not mean zero memory use.
 
 ## Build on Windows
 
@@ -42,17 +41,16 @@ dotnet run --project src/ArcZipWindows
 
 ## Local API
 
-See [docs/API.md](docs/API.md). The API is disabled until the user clicks **API: Start** in the desktop app. It binds only to 127.0.0.1, uses a per-run bearer token stored under `%LOCALAPPDATA%\ArcZipWindows\api.token`, and stops when the app closes. Do not share the token.
+See [docs/API.md](docs/API.md). The API starts only after the user clicks **API: Start** in the desktop app. It binds to `127.0.0.1:47821`, uses a per-run bearer token stored under `%LOCALAPPDATA%\ArcZipWindows\api.token`, and stops when the app closes. Do not share the token.
 
-## Performance principles
+## Performance and safety
 
-See [docs/PERFORMANCE.md](docs/PERFORMANCE.md). The app does not start a resident service automatically, processes API requests serially, and streams file data. Performance claims require benchmarks on representative archives.
-
-## License
-
-MIT for this project source. Any future third-party archive engine must keep its own license and notices.
-
+See [docs/PERFORMANCE.md](docs/PERFORMANCE.md). Large file data is streamed, and archive edits are written to temporary files before replacing the original. Performance claims require benchmarks on representative archives.
 
 ## Windows installer
 
-The Windows build workflow publishes two artifacts: the self-contained x64 application folder and `ArcZip-Windows-Setup.exe`. The installer is currently unsigned; Windows SmartScreen may display a warning. Install only from this repository's Actions artifacts and review the source before use.
+The Windows build workflow publishes `ArcZip-Windows-Setup.exe` and the self-contained `ArcZip-Windows-win-x64` artifact. The installer is unsigned; Windows SmartScreen may display a warning. Download only from this repository's Actions artifacts and review the source before use.
+
+## License
+
+MIT for this project source. SharpCompress is a third-party dependency and retains its own license and notices.

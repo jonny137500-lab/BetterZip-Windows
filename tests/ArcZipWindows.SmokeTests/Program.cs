@@ -32,9 +32,16 @@ try
     await File.WriteAllTextAsync(Path.Combine(folder, "nested", "inside.txt"), "nested payload");
     service.AddPaths(archivePath, [folder]);
     Check(service.List(archivePath).Any(x => x.Name == "sample-folder/nested/inside.txt"), "add folder tree with relative paths");
+    var folderArchive = Path.Combine(root, "folder-created.zip");
+    service.CreateFromPathsAny(folderArchive, [folder], overwrite: true, compressionLevel: 9);
+    Check(service.ListAny(folderArchive).Any(x => x.Name == "sample-folder/nested/inside.txt"), "create archive from folder and preserve paths");
     var extractedFolderFile = Path.Combine(root, "folder-extract");
     service.ExtractEntries(archivePath, ["sample-folder/nested/inside.txt"], extractedFolderFile);
     Check(await File.ReadAllTextAsync(Path.Combine(extractedFolderFile, "sample-folder", "nested", "inside.txt")) == "nested payload", "extract folder tree");
+    service.RenameEntry(archivePath, "sample-folder/", "renamed-folder/");
+    Check(service.List(archivePath).Any(x => x.Name.StartsWith("renamed-folder/", StringComparison.Ordinal)), "rename virtual folder and its contents");
+    service.DeleteEntries(archivePath, ["renamed-folder/"]);
+    Check(!service.List(archivePath).Any(x => x.Name.StartsWith("renamed-folder/", StringComparison.Ordinal)), "delete virtual folder and its contents");
 
     var sevenZipPath = Path.Combine(root, "sample.7z");
     service.CreateAny(sevenZipPath, [inputA]);
@@ -43,7 +50,30 @@ try
     var sevenZipExtract = Path.Combine(root, "7z-extract");
     service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], sevenZipExtract);
     Check(await File.ReadAllTextAsync(Path.Combine(sevenZipExtract, "alpha.txt")) == "alpha payload", "extract 7z entry");
+    var progress = new CountingProgress();
+    var progressExtract = Path.Combine(root, "progress-extract");
+    service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], progressExtract, null, progress, CancellationToken.None);
+    Check(progress.Count > 0, "extraction reports byte progress");
+    using var cancelledToken = new CancellationTokenSource();
+    cancelledToken.Cancel();
+    var cancellationObserved = false;
+    try { service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], Path.Combine(root, "cancelled-extract"), null, null, cancelledToken.Token); }
+    catch (OperationCanceledException) { cancellationObserved = true; }
+    Check(cancellationObserved, "extraction responds to cancellation");
+    service.AddFiles(sevenZipPath, [inputB]);
+    Check(service.ListAny(sevenZipPath).Any(x => x.Name == "beta.txt"), "add file to 7z");
+    service.RenameEntry(sevenZipPath, "beta.txt", "renamed-beta.txt");
+    Check(service.ListAny(sevenZipPath).Any(x => x.Name == "renamed-beta.txt"), "rename 7z entry");
+    service.DeleteEntries(sevenZipPath, ["renamed-beta.txt"]);
+    Check(!service.ListAny(sevenZipPath).Any(x => x.Name == "renamed-beta.txt"), "delete 7z entry");
 
+    var tarGzPath = Path.Combine(root, "sample.tar.gz");
+    service.CreateAny(tarGzPath, [inputA]);
+    Check(service.ListAny(tarGzPath).Any(x => x.Name == "alpha.txt"), "create and list TAR.GZ");
+    Check(service.VerifyAny(tarGzPath) == 1, "verify TAR.GZ contents");
+    var tarGzExtract = Path.Combine(root, "tar-gz-extract");
+    service.ExtractEntriesAny(tarGzPath, ["alpha.txt"], tarGzExtract);
+    Check(await File.ReadAllTextAsync(Path.Combine(tarGzExtract, "alpha.txt")) == "alpha payload", "extract TAR.GZ entry");
     var replacement = Path.Combine(root, "alpha.txt");
     await File.WriteAllTextAsync(replacement, "replacement payload");
     service.AddFiles(archivePath, [replacement]);
@@ -98,7 +128,9 @@ try
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         var health = await client.GetFromJsonAsync<Dictionary<string, string>>(api.BaseUrl + "health");
         Check(health is not null && health["status"] == "ok", "local API health endpoint");
-        var verifyResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/verify", new { archivePath });
+        var listResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/list", new { archivePath });
+        Check(listResponse.IsSuccessStatusCode, "API archive list endpoint");
+        var verifyResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/verify", new { archivePath, password = (string?)null });
         Check(verifyResponse.IsSuccessStatusCode, "API ZIP verification endpoint");
         var apiFolder = Path.Combine(root, "api-folder");
         Directory.CreateDirectory(apiFolder);
@@ -119,4 +151,11 @@ try
 finally
 {
     try { Directory.Delete(root, recursive: true); } catch { }
+}
+
+
+sealed class CountingProgress : IProgress<ArchiveProgress>
+{
+    public int Count { get; private set; }
+    public void Report(ArchiveProgress value) => Count++;
 }

@@ -1,10 +1,14 @@
-# Performance and memory principles
+# Performance and safety principles
 
 - No background service starts automatically. The REST API is opt-in and stops with the application.
-- Archive entries are listed without extracting their contents.
-- API requests are handled serially to cap concurrency and avoid two simultaneous rewrites of one archive.
-- ZIP edits rewrite to a temporary file and replace the original only after writing succeeds.
-- Large-file streaming uses streams rather than loading whole file contents into memory.
-- Multi-format reads use SharpCompress 0.50.6, which includes fixes for archive path traversal; extraction writes each entry through a validated output path.
+- Large file payloads are streamed instead of loading whole files into memory. Entry copies use a bounded 128 KiB buffer.
+- Long-running create/add/edit/extract/verify operations are moved off the WPF UI thread so the window can remain responsive.
+- Extraction and integrity verification report byte progress and support cancellation.
+- The API processes requests serially; per-archive locks reduce collisions between UI/API rewrites.
+- ZIP, 7z, TAR and TAR.GZ edits are written to a temporary file and replace the original only after the writer closes successfully.
+- Extraction validates normalized output paths before writing entries, including entries from nested archives.
+- Multi-format read support uses SharpCompress 0.50.6. Format capabilities differ: ZIP, 7z, TAR and TAR.GZ/TGZ are writable; RAR and reader-only formats are not.
+- Text previews are limited to 1 MiB; image previews are limited to 25 MiB and decoded to a bounded width to reduce memory pressure.
+- Archive passwords are held only in memory during the open session and are not persisted by the app.
 
-No application can guarantee zero memory use. Performance and memory targets must be measured on representative archives before making numerical claims. Future work: add cancellation/progress, large archive benchmarks, bounded entry listing, and per-archive operation coordination shared by UI and API.
+No application can guarantee zero memory use. No numerical performance claim is made until representative benchmarks, load tests, and security tests are run.
