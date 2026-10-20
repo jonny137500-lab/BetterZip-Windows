@@ -33,7 +33,7 @@
    <DockPanel LastChildFill="True">
     <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
      <Button x:Name="AddButton" Content="Add files" Click="Add_Click"/>
-     <Button Content="Extract selected" Click="Extract_Click"/><Button Content="Extract all" Click="ExtractAll_Click"/><Button Content="Verify archive" Click="Verify_Click"/><Button x:Name="EditExternallyButton" Content="Edit externally" Click="EditExternally_Click"/><Button x:Name="SaveBackButton" Content="Save back to ZIP" Click="SaveBack_Click" IsEnabled="False" Background="#DDF7E8" Foreground="#166534"/>
+     <Button Content="Extract selected" Click="Extract_Click"/><Button Content="Extract all" Click="ExtractAll_Click"/><Button Content="Verify archive" Click="Verify_Click"/><Button Content="Unlock" Click="Unlock_Click"/><Button x:Name="EditExternallyButton" Content="Edit externally" Click="EditExternally_Click"/><Button x:Name="SaveBackButton" Content="Save back to ZIP" Click="SaveBack_Click" IsEnabled="False" Background="#DDF7E8" Foreground="#166534"/>
      <Button x:Name="RenameButton" Content="Rename" Click="Rename_Click"/>
      <Button x:Name="DeleteButton" Content="Delete" Click="Delete_Click" Background="#FDECEC" Foreground="#B42318"/>
     </StackPanel>
@@ -53,7 +53,9 @@
     <DataGrid.Columns>
      <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" MinWidth="280"/>
      <DataGridTextColumn Header="TYPE" Binding="{Binding Kind}" Width="100"/>
-     <DataGridTextColumn Header="SIZE" Binding="{Binding SizeText}" Width="130"/>
+     <DataGridTextColumn Header="SIZE" Binding="{Binding SizeText}" Width="110"/>
+      <DataGridTextColumn Header="COMPRESSED" Binding="{Binding CompressedSizeText}" Width="120"/>
+      <DataGridTextColumn Header="SAVED" Binding="{Binding CompressionRatioText}" Width="85"/>
      <DataGridTextColumn Header="MODIFIED" Binding="{Binding ModifiedText}" Width="180"/>
     </DataGrid.Columns>
    </DataGrid>
