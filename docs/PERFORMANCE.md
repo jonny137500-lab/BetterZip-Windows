@@ -5,5 +5,6 @@
 - API requests are handled serially to cap concurrency and avoid two simultaneous rewrites of one archive.
 - ZIP edits rewrite to a temporary file and replace the original only after writing succeeds.
 - Large-file streaming uses streams rather than loading whole file contents into memory.
+- Multi-format reads use SharpCompress 0.50.6, which includes fixes for archive path traversal; extraction writes each entry through a validated output path.
 
 No application can guarantee zero memory use. Performance and memory targets must be measured on representative archives before making numerical claims. Future work: add cancellation/progress, large archive benchmarks, bounded entry listing, and per-archive operation coordination shared by UI and API.
