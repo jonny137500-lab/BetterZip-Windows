@@ -38,3 +38,5 @@ This API is a local desktop integration interface, not a remote/network service.
 Archive mutation endpoints (add/delete/rename/replace) support ZIP, 7z, TAR, and TAR.GZ. RAR, ACE/ARJ, and compressed-stream-only formats are read-only.
 
 Archive mutation endpoints (add/delete/rename/replace) support ZIP, 7z, TAR, and TAR.GZ. RAR, ACE/ARJ, and compressed-stream-only formats are read-only.
+
+`compressionLevel` is optional (0–9, default 6). Creating an archive accepts file and folder paths; folders are added recursively with relative paths.
