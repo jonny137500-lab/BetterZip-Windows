@@ -32,7 +32,7 @@
   <Border DockPanel.Dock="Top" Background="White" Padding="12,10" BorderBrush="#E5EAF2" BorderThickness="0,0,0,1">
    <DockPanel LastChildFill="True">
     <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-     <Button x:Name="AddButton" Content="Add files" Click="Add_Click"/>
+     <Button x:Name="UpButton" Content="↑ Up" Click="Up_Click" IsEnabled="False"/><Button x:Name="AddButton" Content="Add files" Click="Add_Click"/>
      <Button Content="Extract selected" Click="Extract_Click"/><Button Content="Extract all" Click="ExtractAll_Click"/><Button Content="Verify archive" Click="Verify_Click"/><Button Content="Unlock" Click="Unlock_Click"/><Button x:Name="EditExternallyButton" Content="Edit externally" Click="EditExternally_Click"/><Button x:Name="SaveBackButton" Content="Save back to ZIP" Click="SaveBack_Click" IsEnabled="False" Background="#DDF7E8" Foreground="#166534"/>
      <Button x:Name="RenameButton" Content="Rename" Click="Rename_Click"/>
      <Button x:Name="DeleteButton" Content="Delete" Click="Delete_Click" Background="#FDECEC" Foreground="#B42318"/>
@@ -49,9 +49,9 @@
    <DockPanel><TextBlock x:Name="StatusText" Text="Ready" Foreground="#64748B" VerticalAlignment="Center"/><TextBlock Text="Multi-format archive workspace · API is opt-in" Foreground="#94A3B8" DockPanel.Dock="Right" VerticalAlignment="Center"/></DockPanel>
   </Border>
   <Border Margin="16" Background="White" BorderBrush="#E5EAF2" BorderThickness="1" CornerRadius="12" Padding="4">
-   <DataGrid x:Name="EntriesGrid" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" CanUserAddRows="False" Background="White" BorderThickness="0" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEF1F6" RowHeight="42" HeadersVisibility="Column">
+   <DataGrid x:Name="EntriesGrid" MouseDoubleClick="EntriesGrid_MouseDoubleClick" AutoGenerateColumns="False" IsReadOnly="True" SelectionMode="Extended" SelectionUnit="FullRow" CanUserAddRows="False" Background="White" BorderThickness="0" GridLinesVisibility="Horizontal" HorizontalGridLinesBrush="#EEF1F6" RowHeight="42" HeadersVisibility="Column">
     <DataGrid.Columns>
-     <DataGridTextColumn Header="NAME" Binding="{Binding Name}" Width="*" MinWidth="280"/>
+     <DataGridTextColumn Header="NAME" Binding="{Binding DisplayName}" Width="*" MinWidth="280"/>
      <DataGridTextColumn Header="TYPE" Binding="{Binding Kind}" Width="100"/>
      <DataGridTextColumn Header="SIZE" Binding="{Binding SizeText}" Width="110"/>
       <DataGridTextColumn Header="COMPRESSED" Binding="{Binding CompressedSizeText}" Width="120"/>
