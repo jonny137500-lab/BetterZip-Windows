@@ -1,6 +1,9 @@
 using System.IO;
 using System.IO.Compression;
 using System.Collections.Concurrent;
+using SharpCompress.Archives;
+using SharpCompress.Common;
+using SharpCompress.Writers;
 
 namespace ArcZipWindows;
 
@@ -10,7 +13,111 @@ public sealed class ZipArchiveService
     private static readonly ConcurrentDictionary<string, object> PathLocks = new(StringComparer.OrdinalIgnoreCase);
     private static object Gate(string path) => PathLocks.GetOrAdd(Path.GetFullPath(path), _ => new object());
 
+    private static readonly HashSet<string> ReadableExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".zip", ".7z", ".rar", ".tar", ".gz", ".tgz", ".bz2", ".xz", ".lz", ".zst", ".ar", ".arj", ".ace", ".lzw"
+    };
+
+    public static bool CanReadFormat(string path) => ReadableExtensions.Contains(Path.GetExtension(path));
+
+    public static bool CanModifyFormat(string path) =>
+        string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Lists supported archive formats without extracting file contents.</summary>
+    public IReadOnlyList<ArchiveEntryRow> ListAny(string archivePath)
+    {
+        if (CanModifyFormat(archivePath)) return List(archivePath);
+        lock (Gate(archivePath))
+        {
+            using var archive = ArchiveFactory.OpenArchive(archivePath);
+            return archive.Entries.Select(e => new ArchiveEntryRow
+            {
+                Name = e.Key ?? string.Empty,
+                Kind = e.IsDirectory ? "Folder" : "File",
+                Length = e.Size,
+                Modified = e.LastModifiedTime is DateTime time ? new DateTimeOffset(time) : null
+            }).OrderBy(e => e.Kind == "Folder" ? 0 : 1)
+              .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    /// <summary>Creates ZIP, 7z, TAR and TAR.GZ archives.</summary>
+    public void CreateAny(string destination, IEnumerable<string> files, bool overwrite = false)
+    {
+        var fullPath = Path.GetFullPath(destination);
+        var ext = Path.GetExtension(fullPath);
+        if (ext.Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            Create(fullPath, files, overwrite);
+            return;
+        }
+
+        ArchiveType type;
+        WriterOptions options;
+        if (ext.Equals(".7z", StringComparison.OrdinalIgnoreCase))
+        {
+            type = ArchiveType.SevenZip;
+            options = new SevenZipWriterOptions(CompressionType.LZMA2);
+        }
+        else if (ext.Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
+                 fullPath.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+        {
+            type = ArchiveType.Tar;
+            options = WriterOptions.ForTar(CompressionType.GZip);
+        }
+        else if (ext.Equals(".tar", StringComparison.OrdinalIgnoreCase))
+        {
+            type = ArchiveType.Tar;
+            options = WriterOptions.ForTar(CompressionType.None);
+        }
+        else
+        {
+            throw new NotSupportedException("Creating this format is not supported yet. Create .zip, .7z, .tar or .tar.gz.");
+        }
+
+        lock (Gate(fullPath))
+        {
+            if (File.Exists(fullPath) && !overwrite)
+                throw new IOException("Destination already exists. Explicit overwrite confirmation is required.");
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            var tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                using (var output = File.Create(tempPath))
+                using (var writer = WriterFactory.OpenWriter(output, type, options))
+                {
+                    foreach (var file in files)
+                    {
+                        var info = new FileInfo(Path.GetFullPath(file));
+                        if (!info.Exists) throw new FileNotFoundException("Input file not found.", file);
+                        using var input = File.OpenRead(info.FullName);
+                        writer.Write(info.Name, input, info.LastWriteTime);
+                    }
+                }
+                File.Move(tempPath, fullPath, overwrite);
+            }
+            finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
+        }
+    }
+
     /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
+    public int VerifyAny(string archivePath)
+    {
+        if (CanModifyFormat(archivePath)) return Verify(archivePath);
+        lock (Gate(archivePath))
+        {
+            using var archive = ArchiveFactory.OpenArchive(archivePath);
+            var verified = 0;
+            foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
+            {
+                using var input = entry.OpenEntryStream();
+                input.CopyTo(Stream.Null);
+                verified++;
+            }
+            return verified;
+        }
+    }
+
     public int Verify(string archivePath)
     {
         lock (Gate(archivePath))
@@ -215,6 +322,40 @@ public sealed class ZipArchiveService
             File.Move(tempPath, fullPath, true);
         }
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
+    }
+
+    public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory)
+    {
+        if (CanModifyFormat(archivePath))
+        {
+            ExtractEntries(archivePath, names, outputDirectory);
+            return;
+        }
+        var selected = names.ToHashSet(StringComparer.Ordinal);
+        var root = Path.GetFullPath(outputDirectory);
+        Directory.CreateDirectory(root);
+        var prefix = root.EndsWith(Path.DirectorySeparatorChar) ? root : root + Path.DirectorySeparatorChar;
+        lock (Gate(archivePath))
+        {
+            using var archive = ArchiveFactory.OpenArchive(archivePath);
+            foreach (var entry in archive.Entries.Where(e => selected.Contains(e.Key ?? string.Empty)))
+            {
+                var key = (entry.Key ?? string.Empty).Replace('\\', '/');
+                var target = Path.GetFullPath(Path.Combine(root, key.Replace('/', Path.DirectorySeparatorChar)));
+                if (!target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(target, root, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"Unsafe archive path rejected: {key}");
+                if (entry.IsDirectory)
+                {
+                    Directory.CreateDirectory(target);
+                    continue;
+                }
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                using var input = entry.OpenEntryStream();
+                using var output = new FileStream(target, FileMode.Create, FileAccess.Write, FileShare.None);
+                input.CopyTo(output);
+            }
+        }
     }
 
     public void ExtractEntries(string archivePath, IEnumerable<string> names, string outputDirectory)
