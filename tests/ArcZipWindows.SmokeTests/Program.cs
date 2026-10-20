@@ -126,7 +126,9 @@ try
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         var health = await client.GetFromJsonAsync<Dictionary<string, string>>(api.BaseUrl + "health");
         Check(health is not null && health["status"] == "ok", "local API health endpoint");
-        var verifyResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/verify", new { archivePath });
+        var listResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/list", new { archivePath });
+        Check(listResponse.IsSuccessStatusCode, "API archive list endpoint");
+        var verifyResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/verify", new { archivePath, password = (string?)null });
         Check(verifyResponse.IsSuccessStatusCode, "API ZIP verification endpoint");
         var apiFolder = Path.Combine(root, "api-folder");
         Directory.CreateDirectory(apiFolder);
