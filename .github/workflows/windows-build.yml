@@ -30,3 +30,15 @@ jobs:
           path: artifacts/ArcZipWindows-win-x64/
           if-no-files-found: error
           retention-days: 14
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+      - name: Build Windows installer
+        shell: pwsh
+        run: '& "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\ArcZipWindows.iss'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArcZip-Windows-Installer
+          path: artifacts/ArcZip-Windows-Setup.exe
+          if-no-files-found: error
+          retention-days: 14
