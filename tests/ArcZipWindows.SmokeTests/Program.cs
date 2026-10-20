@@ -22,6 +22,7 @@ try
     service.Create(archivePath, [inputA]);
     Check(service.List(archivePath).Any(x => x.Name == "alpha.txt"), "create and list ZIP");
     Check(service.Verify(archivePath) == 1, "verify ZIP entry data and CRC");
+    Check(service.ListAny(archivePath).Any(x => x.Name == "alpha.txt"), "format-aware ZIP listing");
 
     service.AddFiles(archivePath, [inputB]);
     Check(service.List(archivePath).Any(x => x.Name == "beta.txt"), "add file");
@@ -34,6 +35,14 @@ try
     var extractedFolderFile = Path.Combine(root, "folder-extract");
     service.ExtractEntries(archivePath, ["sample-folder/nested/inside.txt"], extractedFolderFile);
     Check(await File.ReadAllTextAsync(Path.Combine(extractedFolderFile, "sample-folder", "nested", "inside.txt")) == "nested payload", "extract folder tree");
+
+    var sevenZipPath = Path.Combine(root, "sample.7z");
+    service.CreateAny(sevenZipPath, [inputA]);
+    Check(service.ListAny(sevenZipPath).Any(x => x.Name == "alpha.txt"), "create and list 7z archive");
+    Check(service.VerifyAny(sevenZipPath) == 1, "verify 7z contents");
+    var sevenZipExtract = Path.Combine(root, "7z-extract");
+    service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], sevenZipExtract);
+    Check(await File.ReadAllTextAsync(Path.Combine(sevenZipExtract, "alpha.txt")) == "alpha payload", "extract 7z entry");
 
     var replacement = Path.Combine(root, "alpha.txt");
     await File.WriteAllTextAsync(replacement, "replacement payload");
