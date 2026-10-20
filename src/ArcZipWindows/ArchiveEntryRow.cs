@@ -5,6 +5,8 @@ public sealed class ArchiveEntryRow
  public string Name { get; init; } = "";
  public string DisplayName { get; init; } = "";
  public string Kind { get; init; } = "File";
+ public bool IsEncrypted { get; init; }
+ public string EncryptionText => IsEncrypted ? "Locked" : "—";
  public long Length { get; init; }
  public long? CompressedLength { get; init; }
  public string CompressedSizeText => Kind == "Folder" || CompressedLength is null ? "—" : FormatSize(CompressedLength.Value);
