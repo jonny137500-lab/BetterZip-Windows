@@ -16,6 +16,7 @@ public partial class MainWindow : Window
     private string? pendingEditEntryName;
     private string? pendingEditFile;
     private string? currentArchivePassword;
+    private bool isBusy;
     private string currentFolderPrefix = "";
     private readonly Stack<ArchiveNavigationState> navigationStack = new();
     private readonly HashSet<string> nestedTempFiles = new(StringComparer.OrdinalIgnoreCase);
@@ -92,7 +93,7 @@ public partial class MainWindow : Window
         }
     }
 
-    private void Window_Drop(object sender, DragEventArgs e)
+    private async void Window_Drop(object sender, DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
         var existing = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToArray();
@@ -106,7 +107,7 @@ public partial class MainWindow : Window
         if (!RequireArchive()) return;
         try
         {
-            service.AddPaths(archivePath!, existing);
+            await RunBusyAsync("Adding dropped files and folders…", () => service.AddPaths(archivePath!, existing));
             RefreshEntries();
             StatusText.Text = $"Added {existing.Length} dropped item(s)";
         }
@@ -202,7 +203,7 @@ public partial class MainWindow : Window
         UpdateArchiveCapabilities();
     }
 
-    private void EntriesGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    private async void EntriesGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         var row = SelectedRows().FirstOrDefault();
         if (row is null || archivePath is null) return;
@@ -221,7 +222,7 @@ public partial class MainWindow : Window
         var nestedPath = Path.Combine(directory, Path.GetFileName(row.Name));
         try
         {
-            service.ExportEntryToFile(parentPath, row.Name, nestedPath, currentArchivePassword);
+            await RunBusyAsync("Opening nested archive…", () => service.ExportEntryToFile(parentPath, row.Name, nestedPath, currentArchivePassword));
             navigationStack.Push(new ArchiveNavigationState(parentPath, currentArchivePassword, currentFolderPrefix, parentLabel));
             nestedTempFiles.Add(nestedPath);
             currentFolderPrefix = "";
@@ -254,7 +255,7 @@ public partial class MainWindow : Window
         if (IsInitialized) RefreshEntries();
     }
 
-    private void Create_Click(object sender, RoutedEventArgs e)
+    private async void Create_Click(object sender, RoutedEventArgs e)
     {
         var files = new OpenFileDialog { Multiselect = true, Title = "Choose files to add to a new ZIP" };
         if (files.ShowDialog() != true) return;
@@ -262,7 +263,7 @@ public partial class MainWindow : Window
         if (save.ShowDialog() != true) return;
         try
         {
-            service.CreateAny(save.FileName, files.FileNames, overwrite: true);
+            await RunBusyAsync("Creating archive…", () => service.CreateAny(save.FileName, files.FileNames, overwrite: true));
             archivePath = save.FileName;
             currentArchivePassword = null;
             ArchiveLabel.Text = archivePath;
@@ -273,35 +274,35 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private void Add_Click(object sender, RoutedEventArgs e)
+    private async void Add_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
         var dialog = new OpenFileDialog { Multiselect = true, Title = "Choose files to add" };
         if (dialog.ShowDialog() != true) return;
-        try { service.AddFiles(archivePath!, dialog.FileNames); RefreshEntries(); StatusText.Text = "Files added"; }
+        try { await RunBusyAsync("Adding files…", () => service.AddFiles(archivePath!, dialog.FileNames)); RefreshEntries(); StatusText.Text = "Files added"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private void Extract_Click(object sender, RoutedEventArgs e)
+    private async void Extract_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
         var selected = SelectedRows().Select(x => x.Name).ToList();
         if (selected.Count == 0) { MessageBox.Show("Select one or more entries first."); return; }
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
-        try { service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName, currentArchivePassword); StatusText.Text = "Extraction complete"; }
+        try { await RunBusyAsync("Extracting selected entries…", () => service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName, currentArchivePassword)); StatusText.Text = "Extraction complete"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private void ExtractAll_Click(object sender, RoutedEventArgs e)
+    private async void ExtractAll_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
         try
         {
-            var names = service.ListAny(archivePath!).Select(x => x.Name).ToList();
-            service.ExtractEntriesAny(archivePath!, names, dialog.FolderName, currentArchivePassword);
+            var names = service.ListAny(archivePath!, currentArchivePassword).Select(x => x.Name).ToList();
+            await RunBusyAsync("Extracting all entries…", () => service.ExtractEntriesAny(archivePath!, names, dialog.FolderName, currentArchivePassword));
             StatusText.Text = $"Extracted {names.Count} entries";
         }
         catch (Exception ex) { ShowError(ex); }
@@ -314,36 +315,37 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text = "Verifying archive data and CRC checks…";
-            var count = await Task.Run(() => service.VerifyAny(path, currentArchivePassword));
+            var count = 0;
+            await RunBusyAsync("Verifying archive data and CRC checks…", () => count = service.VerifyAny(path, currentArchivePassword));
             StatusText.Text = $"Verified {count} file entries; no corruption detected";
             MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "ZIP verification", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private void Delete_Click(object sender, RoutedEventArgs e)
+    private async void Delete_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
         var selected = SelectedRows().Select(x => x.Name).ToList();
         if (selected.Count == 0) return;
         if (MessageBox.Show($"Delete {selected.Count} selected entr(y/ies)?", "Confirm delete", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes) return;
-        try { service.DeleteEntries(archivePath!, selected); RefreshEntries(); StatusText.Text = "Entries deleted"; }
+        try { await RunBusyAsync("Updating archive…", () => service.DeleteEntries(archivePath!, selected)); RefreshEntries(); StatusText.Text = "Entries deleted"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private void Rename_Click(object sender, RoutedEventArgs e)
+    private async void Rename_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
         var row = SelectedRows().FirstOrDefault();
         if (row is null) { MessageBox.Show("Select one entry to rename."); return; }
         var dialog = new RenameWindow(row.DisplayName) { Owner = this };
         if (dialog.ShowDialog() != true) return;
-        try { var newName = currentFolderPrefix + dialog.NewName + (row.Kind == "Folder" ? "/" : ""); service.RenameEntry(archivePath!, row.Name, newName); RefreshEntries(); StatusText.Text = "Entry renamed"; }
+        try { var newName = currentFolderPrefix + dialog.NewName + (row.Kind == "Folder" ? "/" : ""); await RunBusyAsync("Renaming archive entry…", () => service.RenameEntry(archivePath!, row.Name, newName)); RefreshEntries(); StatusText.Text = "Entry renamed"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
 
-    private void EditExternally_Click(object sender, RoutedEventArgs e)
+    private async void EditExternally_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
         var row = SelectedRows().FirstOrDefault();
@@ -362,7 +364,7 @@ public partial class MainWindow : Window
             Directory.CreateDirectory(editDirectory);
             var extension = Path.GetExtension(row.Name);
             var tempFile = Path.Combine(editDirectory, "edit" + extension);
-            service.ExportEntryToFile(archivePath!, row.Name, tempFile);
+            await RunBusyAsync("Preparing external edit…", () => service.ExportEntryToFile(archivePath!, row.Name, tempFile, currentArchivePassword));
             Process.Start(new ProcessStartInfo(tempFile) { UseShellExecute = true });
             pendingEditArchivePath = archivePath;
             pendingEditEntryName = row.Name;
@@ -373,7 +375,7 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private void SaveBack_Click(object sender, RoutedEventArgs e)
+    private async void SaveBack_Click(object sender, RoutedEventArgs e)
     {
         if (pendingEditArchivePath is null || pendingEditEntryName is null || pendingEditFile is null || !File.Exists(pendingEditFile))
         {
@@ -383,7 +385,7 @@ public partial class MainWindow : Window
         }
         try
         {
-            service.ReplaceEntry(pendingEditArchivePath, pendingEditEntryName, pendingEditFile);
+            await RunBusyAsync("Saving changes to archive…", () => service.ReplaceEntry(pendingEditArchivePath, pendingEditEntryName, pendingEditFile));
             if (string.Equals(archivePath, pendingEditArchivePath, StringComparison.OrdinalIgnoreCase)) RefreshEntries();
             StatusText.Text = $"Saved changes to {pendingEditEntryName}";
             CleanupPendingEdit();
@@ -422,6 +424,21 @@ public partial class MainWindow : Window
             StatusText.Text = "Archive unlocked for reading";
         }
         catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async Task RunBusyAsync(string message, Action action)
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ToolbarActions.IsEnabled = false;
+        StatusText.Text = message;
+        try { await Task.Run(action); }
+        finally
+        {
+            isBusy = false;
+            ToolbarActions.IsEnabled = true;
+            UpdateArchiveCapabilities();
+        }
     }
 
     private void UpdateArchiveCapabilities()
