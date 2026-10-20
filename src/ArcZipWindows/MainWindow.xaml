@@ -20,8 +20,8 @@
    <DockPanel>
     <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
      <Button Content="API: Start" Click="Api_Click" x:Name="ApiButton" Background="#E0EAFE" Foreground="#1D4ED8"/>
-     <Button Content="Create archive" Click="Create_Click" Background="#315EFB" Foreground="White"/><Button Content="Create from folder" Click="CreateFromFolder_Click"/><TextBlock Text="Compression" VerticalAlignment="Center" Margin="6,0,2,0"/><ComboBox x:Name="CompressionLevelBox" Width="105" SelectedIndex="1" VerticalAlignment="Center"><ComboBoxItem Content="Fast"/><ComboBoxItem Content="Balanced"/><ComboBoxItem Content="Maximum"/></ComboBox>
-     <Button Content="Open archive" Click="Open_Click" Background="#172033" Foreground="White"/>
+     <Button x:Name="CreateArchiveButton" Content="Create archive" Click="Create_Click" Background="#315EFB" Foreground="White"/><Button x:Name="CreateFromFolderButton" Content="Create from folder" Click="CreateFromFolder_Click"/><TextBlock Text="Compression" VerticalAlignment="Center" Margin="6,0,2,0"/><ComboBox x:Name="CompressionLevelBox" Width="105" SelectedIndex="1" VerticalAlignment="Center"><ComboBoxItem Content="Fast"/><ComboBoxItem Content="Balanced"/><ComboBoxItem Content="Maximum"/></ComboBox>
+     <Button x:Name="OpenArchiveButton" Content="Open archive" Click="Open_Click" Background="#172033" Foreground="White"/>
     </StackPanel>
     <StackPanel>
      <TextBlock Text="ArcZip Windows" FontSize="25" FontWeight="SemiBold" Foreground="#111827"/>
