@@ -347,6 +347,20 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex); }
     }
 
+    private async void AddFolder_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireArchive()) return;
+        var folder = new OpenFolderDialog { Title = "Choose a folder to add" };
+        if (folder.ShowDialog() != true) return;
+        try
+        {
+            await RunBusyAsync("Adding folder…", () => service.AddPaths(archivePath!, [folder.FolderName]));
+            RefreshEntries();
+            StatusText.Text = "Folder added";
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
     private async void Add_Click(object sender, RoutedEventArgs e)
     {
         if (!RequireArchive()) return;
