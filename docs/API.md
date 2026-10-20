@@ -12,13 +12,14 @@ Send it in every request as `Authorization: Bearer <token>`. Do not share the to
 
 - `GET /health` — health/version response.
 - `GET /archive/entries?path=C%3A%5Cpath%5Cfile.zip` — list supported archive entries.
-- `POST /archive/verify` — JSON: `{"archivePath":"C:\\out.zip"}`; streams each file entry to validate decompression/CRC across supported formats.
+- `POST /archive/list` — JSON: `{"archivePath":"C:\\out.zip","password":null}`; pass a password in the JSON body for encrypted archives.
+- `POST /archive/verify` — JSON: `{"archivePath":"C:\\out.zip","password":null}`; streams each file entry to validate decompression/CRC across supported formats.
 - `POST /archive/create` — JSON: `{"destination":"C:\\out.zip","files":["C:\\in\\a.txt"],"overwrite":false}`. Existing destination files are protected unless `overwrite` is explicitly `true`. Supports creating ZIP, 7z, TAR, and TAR.GZ. Supports creating ZIP, 7z, TAR, and TAR.GZ.
 - `POST /archive/add` — JSON: `{"archivePath":"C:\\out.zip","files":["C:\\in\\b.txt"]}`. Each path may be a file or directory; directories are added recursively under their selected folder name.
 - `POST /archive/delete` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"]}`.
 - `POST /archive/rename` — JSON: `{"archivePath":"C:\\out.zip","oldName":"a.txt","newName":"renamed.txt"}`.
 - `POST /archive/replace` — JSON: `{"archivePath":"C:\\out.zip","entryName":"folder/a.txt","filePath":"C:\\temp\\edited.txt"}`. Replaces the contents of an existing file entry, including nested entries, with a local file.
-- `POST /archive/extract` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"],"outputDirectory":"C:\\extract"}`.
+- `POST /archive/extract` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"],"outputDirectory":"C:\\extract","password":null}`.
 
 Requests with JSON bodies are limited to 1 MiB. Archive operations are serialized to avoid concurrent rewrite collisions. ZIP is the only supported archive format in this milestone. A 200 response means the operation completed; non-2xx responses contain a JSON `error` field.
 
