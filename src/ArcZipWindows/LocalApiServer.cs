@@ -109,14 +109,14 @@ public sealed class LocalApiServer : IAsyncDisposable
                 if (request.Body.Length == 0) { await WriteResponseAsync(stream, 400, new { error = "A JSON request body is required." }); return; }
                 var verifyBody = JsonSerializer.Deserialize<ApiRequest>(request.Body, JsonOptions) ?? new ApiRequest();
                 Require(verifyBody.ArchivePath, "archivePath");
-                var verifiedEntries = _archives.Verify(verifyBody.ArchivePath!);
+                var verifiedEntries = _archives.VerifyAny(verifyBody.ArchivePath!);
                 await WriteResponseAsync(stream, 200, new { ok = true, verifiedEntries }); return;
             }
             if (request.Method == "GET" && path == "/api/v1/archive/entries")
             {
                 var archive = QueryValue(uri.Query, "path");
                 if (string.IsNullOrWhiteSpace(archive)) { await WriteResponseAsync(stream, 400, new { error = "Query parameter 'path' is required." }); return; }
-                await WriteResponseAsync(stream, 200, _archives.List(archive)); return;
+                await WriteResponseAsync(stream, 200, _archives.ListAny(archive)); return;
             }
             if (request.Method == "POST")
             {
@@ -126,7 +126,7 @@ public sealed class LocalApiServer : IAsyncDisposable
                 {
                     case "/api/v1/archive/create":
                         Require(body.Destination, "destination");
-                        _archives.Create(body.Destination!, body.Files ?? [], body.Overwrite);
+                        _archives.CreateAny(body.Destination!, body.Files ?? [], body.Overwrite);
                         await WriteResponseAsync(stream, 200, new { ok = true, destination = body.Destination }); return;
                     case "/api/v1/archive/add":
                         Require(body.ArchivePath, "archivePath");
@@ -146,7 +146,7 @@ public sealed class LocalApiServer : IAsyncDisposable
                         await WriteResponseAsync(stream, 200, new { ok = true }); return;
                     case "/api/v1/archive/extract":
                         Require(body.ArchivePath, "archivePath"); Require(body.OutputDirectory, "outputDirectory");
-                        _archives.ExtractEntries(body.ArchivePath!, body.Entries ?? [], body.OutputDirectory!);
+                        _archives.ExtractEntriesAny(body.ArchivePath!, body.Entries ?? [], body.OutputDirectory!);
                         await WriteResponseAsync(stream, 200, new { ok = true }); return;
                 }
             }
