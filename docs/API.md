@@ -16,7 +16,7 @@ Send it in every request as `Authorization: Bearer <token>`. Do not share the to
 - `POST /archive/add` — JSON: `{"archivePath":"C:\\out.zip","files":["C:\\in\\b.txt"]}`.
 - `POST /archive/delete` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"]}`.
 - `POST /archive/rename` — JSON: `{"archivePath":"C:\\out.zip","oldName":"a.txt","newName":"renamed.txt"}`.
-- `POST /archive/replace` — JSON: `{"archivePath":"C:\\out.zip","entryName":"folder\\\\a.txt","filePath":"C:\\temp\\edited.txt"}`. Replaces the contents of an existing file entry, including nested entries, with a local file.
+- `POST /archive/replace` — JSON: `{"archivePath":"C:\\out.zip","entryName":"folder/a.txt","filePath":"C:\\temp\\edited.txt"}`. Replaces the contents of an existing file entry, including nested entries, with a local file.
 - `POST /archive/extract` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"],"outputDirectory":"C:\\extract"}`.
 
 Requests with JSON bodies are limited to 1 MiB. Archive operations are serialized to avoid concurrent rewrite collisions. ZIP is the only supported archive format in this milestone. A 200 response means the operation completed; non-2xx responses contain a JSON `error` field.
