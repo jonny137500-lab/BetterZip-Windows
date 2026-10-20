@@ -133,7 +133,7 @@ public sealed class LocalApiServer : IAsyncDisposable
                 {
                     case "/api/v1/archive/create":
                         Require(body.Destination, "destination");
-                        _archives.CreateAny(body.Destination!, body.Files ?? [], body.Overwrite);
+                        _archives.CreateFromPathsAny(body.Destination!, body.Files ?? [], body.Overwrite, body.CompressionLevel ?? 6);
                         await WriteResponseAsync(stream, 200, new { ok = true, destination = body.Destination }); return;
                     case "/api/v1/archive/add":
                         Require(body.ArchivePath, "archivePath");
@@ -330,5 +330,6 @@ public sealed class LocalApiServer : IAsyncDisposable
         public string[]? Files { get; set; }
         public string[]? Entries { get; set; }
         public bool Overwrite { get; set; }
+        public int? CompressionLevel { get; set; }
     }
 }
