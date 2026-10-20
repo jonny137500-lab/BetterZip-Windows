@@ -57,6 +57,20 @@ try
     var tarGzExtract = Path.Combine(root, "tar-gz-extract");
     service.ExtractEntriesAny(tarGzPath, ["alpha.txt"], tarGzExtract);
     Check(await File.ReadAllTextAsync(Path.Combine(tarGzExtract, "alpha.txt")) == "alpha payload", "extract TAR.GZ entry");
+    service.AddFiles(sevenZipPath, [inputB]);
+    Check(service.ListAny(sevenZipPath).Any(x => x.Name == "beta.txt"), "add file to 7z");
+    service.RenameEntry(sevenZipPath, "beta.txt", "renamed-beta.txt");
+    Check(service.ListAny(sevenZipPath).Any(x => x.Name == "renamed-beta.txt"), "rename 7z entry");
+    service.DeleteEntries(sevenZipPath, ["renamed-beta.txt"]);
+    Check(!service.ListAny(sevenZipPath).Any(x => x.Name == "renamed-beta.txt"), "delete 7z entry");
+
+    var tarGzPath = Path.Combine(root, "sample.tar.gz");
+    service.CreateAny(tarGzPath, [inputA]);
+    Check(service.ListAny(tarGzPath).Any(x => x.Name == "alpha.txt"), "create and list TAR.GZ");
+    Check(service.VerifyAny(tarGzPath) == 1, "verify TAR.GZ contents");
+    var tarGzExtract = Path.Combine(root, "tar-gz-extract");
+    service.ExtractEntriesAny(tarGzPath, ["alpha.txt"], tarGzExtract);
+    Check(await File.ReadAllTextAsync(Path.Combine(tarGzExtract, "alpha.txt")) == "alpha payload", "extract TAR.GZ entry");
 
     var replacement = Path.Combine(root, "alpha.txt");
     await File.WriteAllTextAsync(replacement, "replacement payload");

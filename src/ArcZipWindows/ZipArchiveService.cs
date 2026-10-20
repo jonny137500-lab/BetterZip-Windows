@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Writers;
+using SharpCompress.Writers.SevenZip;
 
 namespace ArcZipWindows;
 
@@ -83,6 +84,19 @@ public sealed class ZipArchiveService
             return rows.OrderBy(e => e.Kind == "Folder" ? 0 : 1)
               .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
+    }
+
+    private static (ArchiveType Type, WriterOptions Options) GetWriterSettings(string path)
+    {
+        var ext = Path.GetExtension(path);
+        if (ext.Equals(".7z", StringComparison.OrdinalIgnoreCase))
+            return (ArchiveType.SevenZip, new SevenZipWriterOptions(CompressionType.LZMA2));
+        if (ext.Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
+            path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
+            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.GZip));
+        if (ext.Equals(".tar", StringComparison.OrdinalIgnoreCase))
+            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.None));
+        throw new NotSupportedException("Writing this format is not supported. Use ZIP, 7z, TAR or TAR.GZ.");
     }
 
     private static (ArchiveType Type, WriterOptions Options) GetWriterSettings(string path)
@@ -413,6 +427,62 @@ public sealed class ZipArchiveService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
+    private static void RewriteAny(string archivePath, Func<string, string?> map, IReadOnlyList<(string Path, string EntryName)> additions)
+    {
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            Rewrite(archivePath, entry => map(entry.FullName), additions);
+            return;
+        }
+        if (!CanModifyFormat(archivePath))
+            throw new NotSupportedException("This archive format is read-only in ArcZip Windows.");
+
+        var fullPath = Path.GetFullPath(archivePath);
+        var tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        var (type, options) = GetWriterSettings(fullPath);
+        try
+        {
+            using (var output = File.Create(tempPath))
+            using (var writer = WriterFactory.OpenWriter(output, type, options))
+            {
+                if (UsesSequentialReader(fullPath))
+                {
+                    using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(fullPath);
+                    while (reader.MoveToNextEntry())
+                    {
+                        var entry = reader.Entry;
+                        if (entry.IsDirectory) continue;
+                        var name = map(entry.Key ?? string.Empty);
+                        if (name is null) continue;
+                        using var input = reader.OpenEntryStream();
+                        writer.Write(name, input, entry.LastModifiedTime);
+                    }
+                }
+                else
+                {
+                    using var source = ArchiveFactory.OpenArchive(fullPath);
+                    foreach (var entry in source.Entries)
+                    {
+                        if (entry.IsDirectory) continue;
+                        var name = map(entry.Key ?? string.Empty);
+                        if (name is null) continue;
+                        using var input = entry.OpenEntryStream();
+                        writer.Write(name, input, entry.LastModifiedTime);
+                    }
+                }
+                foreach (var item in additions)
+                {
+                    var info = new FileInfo(item.Path);
+                    if (!info.Exists) throw new FileNotFoundException("Input file not found.", item.Path);
+                    using var input = File.OpenRead(info.FullName);
+                    writer.Write(item.EntryName, input, info.LastWriteTime);
+                }
+            }
+            File.Move(tempPath, fullPath, true);
+        }
+        finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
+    }
+
     private static void Rewrite(string archivePath, Func<ZipArchiveEntry, string?> map, IReadOnlyList<(string Path, string EntryName)> additions)
     {
         var fullPath = Path.GetFullPath(archivePath);
@@ -492,6 +562,15 @@ public sealed class ZipArchiveService
                 }
             }
         }
+    }
+
+    private static string GetSafeExtractionPath(string root, string prefix, string key)
+    {
+        var target = Path.GetFullPath(Path.Combine(root, key.Replace('/', Path.DirectorySeparatorChar)));
+        if (!target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(target, root, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidDataException($"Unsafe archive path rejected: {key}");
+        return target;
     }
 
     private static string GetSafeExtractionPath(string root, string prefix, string key)
