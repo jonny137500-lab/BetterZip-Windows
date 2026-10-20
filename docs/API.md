@@ -12,6 +12,7 @@ Send it in every request as `Authorization: Bearer <token>`. Do not share the to
 
 - `GET /health` — health/version response.
 - `GET /archive/entries?path=C%3A%5Cpath%5Cfile.zip` — list ZIP entries.
+- `POST /archive/verify` — JSON: `{"archivePath":"C:\\out.zip"}`; streams each file entry to validate decompression/CRC.
 - `POST /archive/create` — JSON: `{"destination":"C:\\out.zip","files":["C:\\in\\a.txt"],"overwrite":false}`. Existing destination files are protected unless `overwrite` is explicitly `true`.
 - `POST /archive/add` — JSON: `{"archivePath":"C:\\out.zip","files":["C:\\in\\b.txt"]}`. Each path may be a file or directory; directories are added recursively under their selected folder name.
 - `POST /archive/delete` — JSON: `{"archivePath":"C:\\out.zip","entries":["a.txt"]}`.
