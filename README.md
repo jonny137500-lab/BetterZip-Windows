@@ -9,6 +9,8 @@ Early development. The current milestone implements ZIP-only desktop operations 
 ### Implemented in source
 - Windows WPF desktop UI with search, open, create, add, extract selected, rename, delete
 - ZIP operations stream file contents instead of buffering whole files in memory
+- Export an entry to the default external editor and explicitly save the edited file back into the ZIP
+- Local API supports replacing nested entry contents
 - Edits rewrite to a temporary archive before replacing the original
 - Safer extraction that rejects path traversal
 - ZIP entry operations serialized per archive path to reduce concurrent rewrite races
@@ -20,7 +22,7 @@ Early development. The current milestone implements ZIP-only desktop operations 
 - 7z/RAR/ISO/CAB and other formats
 - encrypted archives and password management
 - split volumes and nested archive browsing
-- editing a file in an external editor and writing it back automatically
+- automatic background monitoring of external editor changes (current workflow requires clicking “Save back to ZIP”)
 - Windows Explorer context menu and file associations
 - installer, signing, update channel, accessibility review and localization
 - benchmarks, load testing, fuzzing and security audit
