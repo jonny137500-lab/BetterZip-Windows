@@ -43,6 +43,21 @@ try
     Check(rejected, "reject path traversal on extraction");
     Check(!File.Exists(Path.Combine(root, "escape.txt")), "no file written outside extraction directory");
 
+
+    await using (var api = new LocalApiServer(service))
+    {
+        api.Start();
+        var token = (await File.ReadAllTextAsync(api.TokenPath)).Trim();
+        using var client = new HttpClient();
+        using var unauthorized = await client.GetAsync(api.BaseUrl + "health");
+        Check((int)unauthorized.StatusCode == 401, "API rejects requests without token");
+        client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+        var health = await client.GetFromJsonAsync<Dictionary<string, string>>(api.BaseUrl + "health");
+        Check(health is not null && health["status"] == "ok", "local API health endpoint");
+        await api.StopAsync();
+        Check(!File.Exists(api.TokenPath), "API stop removes token file");
+    }
+
     var rejectedName = false;
     try { service.RenameEntry(archivePath, "alpha.txt", "../escape.txt"); }
     catch (ArgumentException) { rejectedName = true; }
