@@ -122,7 +122,7 @@ public sealed class LocalApiServer : IAsyncDisposable
                         await WriteResponseAsync(stream, 200, new { ok = true, destination = body.Destination }); return;
                     case "/api/v1/archive/add":
                         Require(body.ArchivePath, "archivePath");
-                        _archives.AddFiles(body.ArchivePath!, body.Files ?? []);
+                        _archives.AddPaths(body.ArchivePath!, body.Files ?? []);
                         await WriteResponseAsync(stream, 200, new { ok = true }); return;
                     case "/api/v1/archive/delete":
                         Require(body.ArchivePath, "archivePath");
