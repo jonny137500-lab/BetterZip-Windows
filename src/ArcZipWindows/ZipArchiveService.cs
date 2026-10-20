@@ -126,7 +126,7 @@ public sealed class ZipArchiveService
             path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
             return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.GZip).WithCompressionLevel(Math.Clamp(compressionLevel, 0, 9)));
         if (ext.Equals(".tar", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.None).WithCompressionLevel(Math.Clamp(compressionLevel, 0, 9)));
+            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.None));
         throw new NotSupportedException("Writing this format is not supported. Use ZIP, 7z, TAR or TAR.GZ.");
     }
 
