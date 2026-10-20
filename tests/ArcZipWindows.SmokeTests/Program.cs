@@ -25,6 +25,15 @@ try
     service.AddFiles(archivePath, [inputB]);
     Check(service.List(archivePath).Any(x => x.Name == "beta.txt"), "add file");
 
+    var folder = Path.Combine(root, "sample-folder");
+    Directory.CreateDirectory(Path.Combine(folder, "nested"));
+    await File.WriteAllTextAsync(Path.Combine(folder, "nested", "inside.txt"), "nested payload");
+    service.AddPaths(archivePath, [folder]);
+    Check(service.List(archivePath).Any(x => x.Name == "sample-folder/nested/inside.txt"), "add folder tree with relative paths");
+    var extractedFolderFile = Path.Combine(root, "folder-extract");
+    service.ExtractEntries(archivePath, ["sample-folder/nested/inside.txt"], extractedFolderFile);
+    Check(await File.ReadAllTextAsync(Path.Combine(extractedFolderFile, "sample-folder", "nested", "inside.txt")) == "nested payload", "extract folder tree");
+
     var replacement = Path.Combine(root, "alpha.txt");
     await File.WriteAllTextAsync(replacement, "replacement payload");
     service.AddFiles(archivePath, [replacement]);
