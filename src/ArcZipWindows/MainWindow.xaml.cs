@@ -80,15 +80,9 @@ public partial class MainWindow : Window
         if (!RequireArchive()) return;
         try
         {
-            var files = existing.Where(File.Exists).ToArray();
-            if (files.Length == 0)
-            {
-                MessageBox.Show("Drop files onto an open ZIP archive. Folder import is not supported yet.");
-                return;
-            }
-            service.AddFiles(archivePath!, files);
+            service.AddPaths(archivePath!, existing);
             RefreshEntries();
-            StatusText.Text = $"Added {files.Length} dropped file(s)";
+            StatusText.Text = $"Added {existing.Length} dropped item(s)";
         }
         catch (Exception ex) { ShowError(ex); }
     }
