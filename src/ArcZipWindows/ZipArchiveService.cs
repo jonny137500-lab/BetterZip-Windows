@@ -24,10 +24,25 @@ public sealed class ZipArchiveService
         ReadableExtensions.Contains(Path.GetExtension(path)) ||
         path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase) ||
         path.EndsWith(".tar.bz2", StringComparison.OrdinalIgnoreCase) ||
-        path.EndsWith(".tar.xz", StringComparison.OrdinalIgnoreCase);
+        path.EndsWith(".tar.xz", StringComparison.OrdinalIgnoreCase) ||
+        path.EndsWith(".7z.001", StringComparison.OrdinalIgnoreCase);
+
+    private static FileInfo[] GetArchiveParts(string path) =>
+        ArchiveFactory.GetFileParts(path).Select(part => new FileInfo(part)).ToArray();
+
+    private static bool HasMultipleParts(string path) => GetArchiveParts(path).Length > 1;
+
+    private static IArchive OpenArchiveWithParts(string path, string? password)
+    {
+        var parts = GetArchiveParts(path);
+        var options = ReaderOptions.ForFilePath.WithPassword(password);
+        return parts.Length > 1
+            ? ArchiveFactory.OpenArchive(parts, options)
+            : ArchiveFactory.OpenArchive(path, options);
+    }
 
     public static bool CanModifyFormat(string path) =>
-        Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase) ||
+        (Path.GetExtension(path).Equals(".zip", StringComparison.OrdinalIgnoreCase) && !HasMultipleParts(path)) ||
         Path.GetExtension(path).Equals(".7z", StringComparison.OrdinalIgnoreCase) ||
         Path.GetExtension(path).Equals(".tar", StringComparison.OrdinalIgnoreCase) ||
         Path.GetExtension(path).Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
@@ -53,7 +68,7 @@ public sealed class ZipArchiveService
     /// <summary>Lists supported archive formats without extracting file contents.</summary>
     public IReadOnlyList<ArchiveEntryRow> ListAny(string archivePath, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password)) return List(archivePath);
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath)) return List(archivePath);
         lock (Gate(archivePath))
         {
             var rows = new List<ArchiveEntryRow>();
@@ -75,7 +90,7 @@ public sealed class ZipArchiveService
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
+                using var archive = OpenArchiveWithParts(archivePath, password);
                 rows.AddRange(archive.Entries.Select(e => new ArchiveEntryRow
                 {
                     Name = e.Key ?? string.Empty,
@@ -214,7 +229,7 @@ public sealed class ZipArchiveService
     /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
     public int VerifyAny(string archivePath, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password)) return Verify(archivePath);
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath)) return Verify(archivePath);
         lock (Gate(archivePath))
         {
             var verified = 0;
@@ -393,7 +408,7 @@ public sealed class ZipArchiveService
             var fullDestination = Path.GetFullPath(destinationFile);
             Directory.CreateDirectory(Path.GetDirectoryName(fullDestination)!);
             using var output = new FileStream(fullDestination, FileMode.Create, FileAccess.Write, FileShare.None);
-            if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password))
+            if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath))
             {
                 using var archive = ZipFile.OpenRead(archivePath);
                 var entry = archive.GetEntry(entryName) ?? throw new FileNotFoundException($"Archive entry not found: {entryName}");
@@ -458,7 +473,7 @@ public sealed class ZipArchiveService
 
     private static void RewriteAny(string archivePath, Func<string, string?> map, IReadOnlyList<(string Path, string EntryName)> additions)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && !HasMultipleParts(archivePath))
         {
             Rewrite(archivePath, entry => map(entry.FullName), additions);
             return;
@@ -550,7 +565,7 @@ public sealed class ZipArchiveService
 
     public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password))
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password) && !HasMultipleParts(archivePath))
         {
             ExtractEntries(archivePath, names, outputDirectory);
             return;
