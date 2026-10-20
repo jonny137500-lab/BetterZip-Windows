@@ -17,6 +17,7 @@ public partial class MainWindow : Window
     private string? pendingEditFile;
     private string? currentArchivePassword;
     private bool isBusy;
+    private CancellationTokenSource? operationCts;
     private bool nestedReadOnly;
     private string currentFolderPrefix = "";
     private readonly Stack<ArchiveNavigationState> navigationStack = new();
@@ -349,6 +350,7 @@ public partial class MainWindow : Window
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
         try { await RunBusyAsync("Extracting selected entries…", () => service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName, currentArchivePassword)); StatusText.Text = "Extraction complete"; }
+        catch (OperationCanceledException) { StatusText.Text = "Extraction cancelled."; }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -360,9 +362,15 @@ public partial class MainWindow : Window
         try
         {
             var names = service.ListAny(archivePath!, currentArchivePassword).Select(x => x.Name).ToList();
-            await RunBusyAsync("Extracting all entries…", () => service.ExtractEntriesAny(archivePath!, names, dialog.FolderName, currentArchivePassword));
+            var progress = new Progress<ArchiveProgress>(p =>
+            {
+                OperationProgressBar.Value = p.PercentComplete;
+                StatusText.Text = $"Extracting {p.CurrentEntry} · {p.PercentComplete:0}%";
+            });
+            await RunBusyAsync("Extracting all entries…", token => service.ExtractEntriesAny(archivePath!, names, dialog.FolderName, currentArchivePassword, progress, token), progress);
             StatusText.Text = $"Extracted {names.Count} entries";
         }
+        catch (OperationCanceledException) { StatusText.Text = "Extraction cancelled."; }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -374,10 +382,16 @@ public partial class MainWindow : Window
         {
             StatusText.Text = "Verifying archive data and CRC checks…";
             var count = 0;
-            await RunBusyAsync("Verifying archive data and CRC checks…", () => count = service.VerifyAny(path, currentArchivePassword));
+            var progress = new Progress<ArchiveProgress>(p =>
+            {
+                OperationProgressBar.Value = p.PercentComplete;
+                StatusText.Text = $"Verifying {p.CurrentEntry} · {p.PercentComplete:0}%";
+            });
+            await RunBusyAsync("Verifying archive data and CRC checks…", token => count = service.VerifyAny(path, currentArchivePassword, progress, token), progress);
             StatusText.Text = $"Verified {count} file entries; no corruption detected";
             MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "Archive verification", MessageBoxButton.OK, MessageBoxImage.Information);
         }
+        catch (OperationCanceledException) { StatusText.Text = "Verification cancelled."; }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -484,19 +498,46 @@ public partial class MainWindow : Window
         catch (Exception ex) { ShowError(ex); }
     }
 
-    private async Task RunBusyAsync(string message, Action action)
+    private Task RunBusyAsync(string message, Action action) =>
+        RunBusyCoreAsync(message, _ => action(), null, cancellable: false);
+
+    private Task RunBusyAsync(string message, Action<CancellationToken> action, IProgress<ArchiveProgress>? progress = null) =>
+        RunBusyCoreAsync(message, action, progress, cancellable: true);
+
+    private async Task RunBusyCoreAsync(string message, Action<CancellationToken> action,
+        IProgress<ArchiveProgress>? progress, bool cancellable)
     {
         if (isBusy) return;
         isBusy = true;
+        operationCts = new CancellationTokenSource();
         ToolbarActions.IsEnabled = false;
+        CancelOperationButton.IsEnabled = cancellable;
+        OperationProgressBar.Visibility = Visibility.Visible;
+        OperationProgressBar.IsIndeterminate = progress is null;
+        OperationProgressBar.Value = 0;
         StatusText.Text = message;
-        try { await Task.Run(action); }
+        try
+        {
+            await Task.Run(() => action(operationCts.Token));
+            OperationProgressBar.Value = 100;
+        }
         finally
         {
+            CancelOperationButton.IsEnabled = false;
+            OperationProgressBar.Visibility = Visibility.Collapsed;
+            OperationProgressBar.IsIndeterminate = false;
+            operationCts.Dispose();
+            operationCts = null;
             isBusy = false;
             ToolbarActions.IsEnabled = true;
             UpdateArchiveCapabilities();
         }
+    }
+
+    private void CancelOperation_Click(object sender, RoutedEventArgs e)
+    {
+        operationCts?.Cancel();
+        StatusText.Text = "Cancelling operation…";
     }
 
     private void UpdateArchiveCapabilities()
