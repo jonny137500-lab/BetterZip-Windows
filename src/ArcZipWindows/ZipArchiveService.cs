@@ -114,9 +114,66 @@ public sealed class ZipArchiveService
     public void CreateFromPathsAny(string destination, IEnumerable<string> paths, bool overwrite = false, int compressionLevel = 6)
     {
         var fullPath = Path.GetFullPath(destination);
-        var inputs = paths.Select(Path.GetFullPath).ToList();
-        CreateAny(fullPath, [], overwrite, compressionLevel);
-        if (inputs.Count > 0) AddPaths(fullPath, inputs);
+        var entries = new List<(string Path, string EntryName)>();
+        foreach (var input in paths.Select(Path.GetFullPath))
+        {
+            if (File.Exists(input))
+            {
+                entries.Add((input, Path.GetFileName(input)));
+                continue;
+            }
+            if (!Directory.Exists(input)) throw new FileNotFoundException("Input file or folder not found.", input);
+            var folderName = new DirectoryInfo(input).Name;
+            foreach (var file in Directory.EnumerateFiles(input, "*", SearchOption.AllDirectories))
+            {
+                var relative = Path.GetRelativePath(input, file).Replace(Path.DirectorySeparatorChar, '/');
+                entries.Add((file, $"{folderName}/{relative}"));
+            }
+        }
+
+        lock (Gate(fullPath))
+        {
+            if (File.Exists(fullPath) && !overwrite)
+                throw new IOException("Destination already exists. Explicit overwrite confirmation is required.");
+            Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+            var tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+            try
+            {
+                if (Path.GetExtension(fullPath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+                {
+                    using (var archive = ZipFile.Open(tempPath, ZipArchiveMode.Create))
+                    {
+                        foreach (var item in entries)
+                        {
+                            var info = new FileInfo(item.Path);
+                            if (!info.Exists) throw new FileNotFoundException("Input file not found.", item.Path);
+                            var entry = archive.CreateEntry(item.EntryName, MapZipCompressionLevel(compressionLevel));
+                            SetTimestamp(entry, info.LastWriteTime);
+                            using var input = File.OpenRead(info.FullName);
+                            using var output = entry.Open();
+                            input.CopyTo(output);
+                        }
+                    }
+                }
+                else
+                {
+                    var (type, options) = GetWriterSettings(fullPath, compressionLevel);
+                    using (var output = File.Create(tempPath))
+                    using (var writer = WriterFactory.OpenWriter(output, type, options))
+                    {
+                        foreach (var item in entries)
+                        {
+                            var info = new FileInfo(item.Path);
+                            if (!info.Exists) throw new FileNotFoundException("Input file not found.", item.Path);
+                            using var input = File.OpenRead(info.FullName);
+                            writer.Write(item.EntryName, input, info.LastWriteTime);
+                        }
+                    }
+                }
+                File.Move(tempPath, fullPath, overwrite);
+            }
+            finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
+        }
     }
 
     /// <summary>Creates ZIP, 7z, TAR and TAR.GZ archives.</summary>
@@ -238,7 +295,7 @@ public sealed class ZipArchiveService
                     {
                         var info = new FileInfo(Path.GetFullPath(file));
                         if (!info.Exists) throw new FileNotFoundException("Input file not found.", file);
-                        var entry = archive.CreateEntry(info.Name, CompressionLevel.Optimal);
+                        var entry = archive.CreateEntry(info.Name, compressionLevel);
                         SetTimestamp(entry, info.LastWriteTime);
                         using var input = File.OpenRead(info.FullName);
                         using var output = entry.Open();
