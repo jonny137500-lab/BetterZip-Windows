@@ -132,6 +132,10 @@ public sealed class LocalApiServer : IAsyncDisposable
                         Require(body.ArchivePath, "archivePath"); Require(body.OldName, "oldName"); Require(body.NewName, "newName");
                         _archives.RenameEntry(body.ArchivePath!, body.OldName!, body.NewName!);
                         await WriteResponseAsync(stream, 200, new { ok = true }); return;
+                    case "/api/v1/archive/replace":
+                        Require(body.ArchivePath, "archivePath"); Require(body.EntryName, "entryName"); Require(body.FilePath, "filePath");
+                        _archives.ReplaceEntry(body.ArchivePath!, body.EntryName!, body.FilePath!);
+                        await WriteResponseAsync(stream, 200, new { ok = true }); return;
                     case "/api/v1/archive/extract":
                         Require(body.ArchivePath, "archivePath"); Require(body.OutputDirectory, "outputDirectory");
                         _archives.ExtractEntries(body.ArchivePath!, body.Entries ?? [], body.OutputDirectory!);
@@ -239,6 +243,8 @@ public sealed class LocalApiServer : IAsyncDisposable
         public string? OutputDirectory { get; set; }
         public string? OldName { get; set; }
         public string? NewName { get; set; }
+        public string? EntryName { get; set; }
+        public string? FilePath { get; set; }
         public string[]? Files { get; set; }
         public string[]? Entries { get; set; }
         public bool Overwrite { get; set; }
