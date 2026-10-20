@@ -16,12 +16,16 @@ public partial class MainWindow : Window
     private string? pendingEditEntryName;
     private string? pendingEditFile;
     private string? currentArchivePassword;
+    private string currentFolderPrefix = "";
+    private readonly Stack<ArchiveNavigationState> navigationStack = new();
+    private readonly HashSet<string> nestedTempFiles = new(StringComparer.OrdinalIgnoreCase);
+    private sealed record ArchiveNavigationState(string ArchivePath, string? Password, string FolderPrefix, string DisplayLabel);
 
     public MainWindow()
     {
         InitializeComponent();
         apiServer = new LocalApiServer(service);
-        Closed += async (_, _) => { await apiServer.StopAsync(); CleanupPendingEdit(); };
+        Closed += async (_, _) => { await apiServer.StopAsync(); CleanupPendingEdit(); ClearNestedArchives(); };
         Loaded += (_, _) =>
         {
             var startupArchive = Environment.GetCommandLineArgs().Skip(1)
@@ -37,7 +41,7 @@ public partial class MainWindow : Window
         TryOpenArchive(dialog.FileName);
     }
 
-    private void TryOpenArchive(string path)
+    private bool TryOpenArchive(string path, bool resetNavigation = true)
     {
         try
         {
@@ -53,18 +57,25 @@ public partial class MainWindow : Window
                 var ext = Path.GetExtension(fullPath);
                 if (!new[] { ".zip", ".7z", ".rar" }.Contains(ext, StringComparer.OrdinalIgnoreCase)) throw;
                 var prompt = new PasswordPromptWindow(Path.GetFileName(fullPath)) { Owner = this };
-                if (prompt.ShowDialog() != true) return;
+                if (prompt.ShowDialog() != true) return false;
                 password = prompt.Password;
                 entries = service.ListAny(fullPath, password);
+            }
+            if (resetNavigation)
+            {
+                currentFolderPrefix = "";
+                navigationStack.Clear();
+                ClearNestedArchives();
             }
             archivePath = fullPath;
             currentArchivePassword = password;
             ArchiveLabel.Text = archivePath;
-            EntriesGrid.ItemsSource = entries.Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
+            ApplyVisibleEntries(entries);
             UpdateArchiveCapabilities();
             StatusText.Text = $"Opened archive · {entries.Count} entries";
+            return true;
         }
-        catch (Exception ex) { ShowError(ex); }
+        catch (Exception ex) { ShowError(ex); return false; }
     }
 
     private void Window_DragOver(object sender, DragEventArgs e)
@@ -105,10 +116,137 @@ public partial class MainWindow : Window
     private void RefreshEntries()
     {
         if (archivePath is null) return;
-        var entries = service.ListAny(archivePath, currentArchivePassword)
-            .Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
-        EntriesGrid.ItemsSource = entries;
-        StatusText.Text = $"{entries.Count} entries";
+        var entries = service.ListAny(archivePath, currentArchivePassword);
+        ApplyVisibleEntries(entries);
+        StatusText.Text = $"{EntriesGrid.Items.Count} entries";
+    }
+
+    private void ApplyVisibleEntries(IEnumerable<ArchiveEntryRow> allEntries)
+    {
+        var visible = new Dictionary<string, ArchiveEntryRow>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in allEntries)
+        {
+            if (!entry.Name.StartsWith(currentFolderPrefix, StringComparison.OrdinalIgnoreCase)) continue;
+            var relative = entry.Name[currentFolderPrefix.Length..].TrimStart('/');
+            if (relative.Length == 0) continue;
+            var slash = relative.IndexOf('/');
+            if (slash >= 0)
+            {
+                var folderName = relative[..slash];
+                var fullFolder = currentFolderPrefix + folderName + "/";
+                if (!visible.ContainsKey(fullFolder))
+                    visible[fullFolder] = new ArchiveEntryRow { Name = fullFolder, DisplayName = folderName, Kind = "Folder" };
+                continue;
+            }
+            visible[entry.Name] = new ArchiveEntryRow
+            {
+                Name = entry.Name,
+                DisplayName = relative,
+                Kind = entry.Kind,
+                Length = entry.Length,
+                CompressedLength = entry.CompressedLength,
+                Modified = entry.Modified
+            };
+        }
+        EntriesGrid.ItemsSource = visible.Values
+            .Where(x => x.DisplayName.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase))
+            .OrderBy(x => x.Kind == "Folder" ? 0 : 1)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase).ToList();
+        UpButton.IsEnabled = currentFolderPrefix.Length > 0 || navigationStack.Count > 0;
+    }
+
+    private void ClearNestedArchives()
+    {
+        foreach (var file in nestedTempFiles.ToArray())
+        {
+            try { if (File.Exists(file)) File.Delete(file); } catch { }
+            try
+            {
+                var directory = Path.GetDirectoryName(file);
+                if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            }
+            catch { }
+        }
+        nestedTempFiles.Clear();
+    }
+
+    private void Up_Click(object sender, RoutedEventArgs e)
+    {
+        SearchBox.Text = "";
+        if (currentFolderPrefix.Length > 0)
+        {
+            var trimmed = currentFolderPrefix.TrimEnd('/');
+            var slash = trimmed.LastIndexOf('/');
+            currentFolderPrefix = slash >= 0 ? trimmed[..(slash + 1)] : "";
+            RefreshEntries();
+            return;
+        }
+        if (navigationStack.Count == 0) return;
+        var current = archivePath;
+        var state = navigationStack.Pop();
+        if (current is not null && nestedTempFiles.Remove(current))
+        {
+            try { if (File.Exists(current)) File.Delete(current); } catch { }
+            try
+            {
+                var directory = Path.GetDirectoryName(current);
+                if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+            }
+            catch { }
+        }
+        archivePath = state.ArchivePath;
+        currentArchivePassword = state.Password;
+        currentFolderPrefix = state.FolderPrefix;
+        ArchiveLabel.Text = state.DisplayLabel;
+        RefreshEntries();
+        UpdateArchiveCapabilities();
+    }
+
+    private void EntriesGrid_MouseDoubleClick(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        var row = SelectedRows().FirstOrDefault();
+        if (row is null || archivePath is null) return;
+        if (row.Kind == "Folder")
+        {
+            currentFolderPrefix = row.Name.EndsWith('/') ? row.Name : row.Name + "/";
+            SearchBox.Text = "";
+            RefreshEntries();
+            return;
+        }
+        if (!ZipArchiveService.CanReadFormat(row.Name)) return;
+        var parentPath = archivePath;
+        var parentLabel = ArchiveLabel.Text;
+        var directory = Path.Combine(Path.GetTempPath(), "ArcZipWindows", Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var nestedPath = Path.Combine(directory, Path.GetFileName(row.Name));
+        try
+        {
+            service.ExportEntryToFile(parentPath, row.Name, nestedPath, currentArchivePassword);
+            navigationStack.Push(new ArchiveNavigationState(parentPath, currentArchivePassword, currentFolderPrefix, parentLabel));
+            nestedTempFiles.Add(nestedPath);
+            currentFolderPrefix = "";
+            if (!TryOpenArchive(nestedPath, resetNavigation: false))
+            {
+                navigationStack.Pop();
+                nestedTempFiles.Remove(nestedPath);
+                try { Directory.Delete(directory, recursive: true); } catch { }
+                archivePath = parentPath;
+                ArchiveLabel.Text = parentLabel;
+                RefreshEntries();
+                UpdateArchiveCapabilities();
+                return;
+            }
+            ArchiveLabel.Text = $"{parentLabel}  ›  {row.DisplayName}";
+            RefreshEntries();
+        }
+        catch (Exception ex)
+        {
+            nestedTempFiles.Remove(nestedPath);
+            try { Directory.Delete(directory, recursive: true); } catch { }
+            archivePath = parentPath;
+            ArchiveLabel.Text = parentLabel;
+            ShowError(ex);
+        }
     }
 
     private void Search_TextChanged(object sender, TextChangedEventArgs e)
