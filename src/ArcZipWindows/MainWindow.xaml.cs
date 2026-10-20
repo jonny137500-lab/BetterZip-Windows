@@ -279,6 +279,8 @@ public partial class MainWindow : Window
         if (IsInitialized) RefreshEntries();
     }
 
+    private int SelectedCompressionLevel => CompressionLevelBox.SelectedIndex switch { 0 => 1, 2 => 9, _ => 6 };
+
     private async void Create_Click(object sender, RoutedEventArgs e)
     {
         var files = new OpenFileDialog { Multiselect = true, Title = "Choose files to add to a new ZIP" };
@@ -287,13 +289,41 @@ public partial class MainWindow : Window
         if (save.ShowDialog() != true) return;
         try
         {
-            await RunBusyAsync("Creating archive…", () => service.CreateAny(save.FileName, files.FileNames, overwrite: true));
+            await RunBusyAsync("Creating archive…", () => service.CreateFromPathsAny(save.FileName, files.FileNames, overwrite: true, compressionLevel: SelectedCompressionLevel));
             archivePath = save.FileName;
             currentArchivePassword = null;
             ArchiveLabel.Text = archivePath;
             UpdateArchiveCapabilities();
             RefreshEntries();
             StatusText.Text = "Archive created";
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private async void CreateFromFolder_Click(object sender, RoutedEventArgs e)
+    {
+        var folder = new OpenFolderDialog { Title = "Choose a folder to archive" };
+        if (folder.ShowDialog() != true) return;
+        var folderName = new DirectoryInfo(folder.FolderName).Name;
+        var save = new SaveFileDialog
+        {
+            Filter = "ZIP archive (*.zip)|*.zip|7-Zip archive (*.7z)|*.7z|TAR archive (*.tar)|*.tar|TAR.GZ archive (*.tar.gz)|*.tar.gz",
+            DefaultExt = ".zip",
+            FileName = folderName + ".zip",
+            AddExtension = true
+        };
+        if (save.ShowDialog() != true) return;
+        try
+        {
+            await RunBusyAsync("Creating archive from folder…", () =>
+                service.CreateFromPathsAny(save.FileName, [folder.FolderName], overwrite: true, compressionLevel: SelectedCompressionLevel));
+            archivePath = save.FileName;
+            currentArchivePassword = null;
+            currentFolderPrefix = "";
+            ArchiveLabel.Text = archivePath;
+            UpdateArchiveCapabilities();
+            RefreshEntries();
+            StatusText.Text = "Archive created from folder";
         }
         catch (Exception ex) { ShowError(ex); }
     }
