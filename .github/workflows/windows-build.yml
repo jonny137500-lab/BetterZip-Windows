@@ -3,6 +3,8 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+permissions:
+  contents: read
 jobs:
   build:
     runs-on: windows-latest
@@ -11,5 +13,9 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
-      - run: dotnet restore src/ArcZipWindows/ArcZipWindows.csproj
-      - run: dotnet build src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --no-restore
+      - name: Restore
+        run: dotnet restore src/ArcZipWindows/ArcZipWindows.csproj
+      - name: Build application
+        run: dotnet build src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --no-restore
+      - name: Run ZIP smoke tests
+        run: dotnet run --project tests/ArcZipWindows.SmokeTests/ArcZipWindows.SmokeTests.csproj --configuration Release
