@@ -31,7 +31,7 @@
   </Border>
   <Border DockPanel.Dock="Top" Background="White" Padding="12,10" BorderBrush="#E5EAF2" BorderThickness="0,0,0,1">
    <DockPanel LastChildFill="True">
-    <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+    <StackPanel x:Name="ToolbarActions" Orientation="Horizontal" DockPanel.Dock="Left">
      <Button x:Name="UpButton" Content="↑ Up" Click="Up_Click" IsEnabled="False"/><Button x:Name="AddButton" Content="Add files" Click="Add_Click"/>
      <Button Content="Extract selected" Click="Extract_Click"/><Button Content="Extract all" Click="ExtractAll_Click"/><Button Content="Verify archive" Click="Verify_Click"/><Button Content="Unlock" Click="Unlock_Click"/><Button x:Name="EditExternallyButton" Content="Edit externally" Click="EditExternally_Click"/><Button x:Name="SaveBackButton" Content="Save back to ZIP" Click="SaveBack_Click" IsEnabled="False" Background="#DDF7E8" Foreground="#166534"/>
      <Button x:Name="RenameButton" Content="Rename" Click="Rename_Click"/>
