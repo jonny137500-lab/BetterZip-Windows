@@ -5,6 +5,7 @@ using SharpCompress.Archives;
 using SharpCompress.Common;
 using SharpCompress.Writers;
 using SharpCompress.Writers.SevenZip;
+using SharpCompress.Readers;
 
 namespace ArcZipWindows;
 
@@ -49,7 +50,7 @@ public sealed class ZipArchiveService
     }
 
     /// <summary>Lists supported archive formats without extracting file contents.</summary>
-    public IReadOnlyList<ArchiveEntryRow> ListAny(string archivePath)
+    public IReadOnlyList<ArchiveEntryRow> ListAny(string archivePath, string? password = null)
     {
         if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) return List(archivePath);
         lock (Gate(archivePath))
@@ -57,7 +58,7 @@ public sealed class ZipArchiveService
             var rows = new List<ArchiveEntryRow>();
             if (UsesSequentialReader(archivePath))
             {
-                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath);
+                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 while (reader.MoveToNextEntry())
                 {
                     var entry = reader.Entry;
@@ -66,13 +67,14 @@ public sealed class ZipArchiveService
                         Name = entry.Key ?? string.Empty,
                         Kind = entry.IsDirectory ? "Folder" : "File",
                         Length = entry.Size,
+                        CompressedLength = entry.CompressedSize,
                         Modified = entry.LastModifiedTime is DateTime time ? new DateTimeOffset(time) : null
                     });
                 }
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 rows.AddRange(archive.Entries.Select(e => new ArchiveEntryRow
                 {
                     Name = e.Key ?? string.Empty,
@@ -148,7 +150,7 @@ public sealed class ZipArchiveService
     }
 
     /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
-    public int VerifyAny(string archivePath)
+    public int VerifyAny(string archivePath, string? password = null)
     {
         if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) return Verify(archivePath);
         lock (Gate(archivePath))
@@ -206,6 +208,7 @@ public sealed class ZipArchiveService
                 Name = e.FullName,
                 Kind = e.FullName.EndsWith('/') ? "Folder" : "File",
                 Length = e.Length,
+                CompressedLength = e.CompressedLength,
                 Modified = e.LastWriteTime
             }).OrderBy(e => e.Kind == "Folder" ? 0 : 1)
               .ThenBy(e => e.Name, StringComparer.OrdinalIgnoreCase).ToList();
@@ -301,14 +304,14 @@ public sealed class ZipArchiveService
         }
     }
 
-    public void ExportEntryToFile(string archivePath, string entryName, string destinationFile)
+    public void ExportEntryToFile(string archivePath, string entryName, string destinationFile, string? password = null)
     {
         lock (Gate(archivePath))
         {
             var fullDestination = Path.GetFullPath(destinationFile);
             Directory.CreateDirectory(Path.GetDirectoryName(fullDestination)!);
             using var output = new FileStream(fullDestination, FileMode.Create, FileAccess.Write, FileShare.None);
-            if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
+            if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password))
             {
                 using var archive = ZipFile.OpenRead(archivePath);
                 var entry = archive.GetEntry(entryName) ?? throw new FileNotFoundException($"Archive entry not found: {entryName}");
@@ -427,61 +430,6 @@ public sealed class ZipArchiveService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
-    private static void RewriteAny(string archivePath, Func<string, string?> map, IReadOnlyList<(string Path, string EntryName)> additions)
-    {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
-        {
-            Rewrite(archivePath, entry => map(entry.FullName), additions);
-            return;
-        }
-        if (!CanModifyFormat(archivePath))
-            throw new NotSupportedException("This archive format is read-only in ArcZip Windows.");
-
-        var fullPath = Path.GetFullPath(archivePath);
-        var tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        var (type, options) = GetWriterSettings(fullPath);
-        try
-        {
-            using (var output = File.Create(tempPath))
-            using (var writer = WriterFactory.OpenWriter(output, type, options))
-            {
-                if (UsesSequentialReader(fullPath))
-                {
-                    using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(fullPath);
-                    while (reader.MoveToNextEntry())
-                    {
-                        var entry = reader.Entry;
-                        if (entry.IsDirectory) continue;
-                        var name = map(entry.Key ?? string.Empty);
-                        if (name is null) continue;
-                        using var input = reader.OpenEntryStream();
-                        writer.Write(name, input, entry.LastModifiedTime);
-                    }
-                }
-                else
-                {
-                    using var source = ArchiveFactory.OpenArchive(fullPath);
-                    foreach (var entry in source.Entries)
-                    {
-                        if (entry.IsDirectory) continue;
-                        var name = map(entry.Key ?? string.Empty);
-                        if (name is null) continue;
-                        using var input = entry.OpenEntryStream();
-                        writer.Write(name, input, entry.LastModifiedTime);
-                    }
-                }
-                foreach (var item in additions)
-                {
-                    var info = new FileInfo(item.Path);
-                    if (!info.Exists) throw new FileNotFoundException("Input file not found.", item.Path);
-                    using var input = File.OpenRead(info.FullName);
-                    writer.Write(item.EntryName, input, info.LastWriteTime);
-                }
-            }
-            File.Move(tempPath, fullPath, true);
-        }
-        finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
-    }
 
     private static void Rewrite(string archivePath, Func<ZipArchiveEntry, string?> map, IReadOnlyList<(string Path, string EntryName)> additions)
     {
@@ -518,7 +466,7 @@ public sealed class ZipArchiveService
         finally { if (File.Exists(tempPath)) File.Delete(tempPath); }
     }
 
-    public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory)
+    public void ExtractEntriesAny(string archivePath, IEnumerable<string> names, string outputDirectory, string? password = null)
     {
         if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase))
         {
