@@ -42,7 +42,7 @@ try
 
     var extractPath = Path.Combine(root, "extract");
     service.ExtractEntries(archivePath, ["alpha.txt"], extractPath);
-    Check(await File.ReadAllTextAsync(Path.Combine(extractPath, "alpha.txt")) == "alpha payload", "extract selected entry");
+    Check(await File.ReadAllTextAsync(Path.Combine(extractPath, "alpha.txt")) == "replacement payload", "extract selected entry after replacement");
 
     service.DeleteEntries(archivePath, ["renamed.txt"]);
     Check(!service.List(archivePath).Any(x => x.Name == "renamed.txt"), "delete entry");
