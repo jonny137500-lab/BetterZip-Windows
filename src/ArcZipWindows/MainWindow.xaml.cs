@@ -284,7 +284,7 @@ public partial class MainWindow : Window
 
     private async void Create_Click(object sender, RoutedEventArgs e)
     {
-        var files = new OpenFileDialog { Multiselect = true, Title = "Choose files to add to a new ZIP" };
+        var files = new OpenFileDialog { Multiselect = true, Title = "Choose files for new archive" };
         if (files.ShowDialog() != true) return;
         var save = new SaveFileDialog { Filter = "ZIP archive (*.zip)|*.zip|7-Zip archive (*.7z)|*.7z|TAR archive (*.tar)|*.tar|TAR.GZ archive (*.tar.gz)|*.tar.gz", DefaultExt = ".zip", FileName = "Archive.zip", AddExtension = true };
         if (save.ShowDialog() != true) return;
@@ -542,6 +542,11 @@ public partial class MainWindow : Window
         isBusy = true;
         operationCts = new CancellationTokenSource();
         ToolbarActions.IsEnabled = false;
+        ApiButton.IsEnabled = false;
+        CreateArchiveButton.IsEnabled = false;
+        CreateFromFolderButton.IsEnabled = false;
+        OpenArchiveButton.IsEnabled = false;
+        CompressionLevelBox.IsEnabled = false;
         CancelOperationButton.IsEnabled = cancellable;
         OperationProgressBar.Visibility = Visibility.Visible;
         OperationProgressBar.IsIndeterminate = progress is null;
@@ -561,6 +566,11 @@ public partial class MainWindow : Window
             operationCts = null;
             isBusy = false;
             ToolbarActions.IsEnabled = true;
+            ApiButton.IsEnabled = true;
+            CreateArchiveButton.IsEnabled = true;
+            CreateFromFolderButton.IsEnabled = true;
+            OpenArchiveButton.IsEnabled = true;
+            CompressionLevelBox.IsEnabled = true;
             UpdateArchiveCapabilities();
         }
     }
