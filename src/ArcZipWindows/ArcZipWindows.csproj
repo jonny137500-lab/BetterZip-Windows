@@ -9,4 +9,7 @@
     <RootNamespace>ArcZipWindows</RootNamespace>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="SharpCompress" Version="0.50.6" />
+  </ItemGroup>
 </Project>
