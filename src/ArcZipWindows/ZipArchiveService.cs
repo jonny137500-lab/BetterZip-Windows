@@ -663,14 +663,6 @@ public sealed class ZipArchiveService
         return target;
     }
 
-    private static string GetSafeExtractionPath(string root, string prefix, string key)
-    {
-        var target = Path.GetFullPath(Path.Combine(root, key.Replace('/', Path.DirectorySeparatorChar)));
-        if (!target.StartsWith(prefix, StringComparison.OrdinalIgnoreCase) &&
-            !string.Equals(target, root, StringComparison.OrdinalIgnoreCase))
-            throw new InvalidDataException($"Unsafe archive path rejected: {key}");
-        return target;
-    }
 
     public void ExtractEntries(string archivePath, IEnumerable<string> names, string outputDirectory)
     {
