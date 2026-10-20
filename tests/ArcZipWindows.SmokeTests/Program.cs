@@ -38,6 +38,10 @@ try
     var extractedFolderFile = Path.Combine(root, "folder-extract");
     service.ExtractEntries(archivePath, ["sample-folder/nested/inside.txt"], extractedFolderFile);
     Check(await File.ReadAllTextAsync(Path.Combine(extractedFolderFile, "sample-folder", "nested", "inside.txt")) == "nested payload", "extract folder tree");
+    service.RenameEntry(archivePath, "sample-folder/", "renamed-folder/");
+    Check(service.List(archivePath).Any(x => x.Name.StartsWith("renamed-folder/", StringComparison.Ordinal)), "rename virtual folder and its contents");
+    service.DeleteEntries(archivePath, ["renamed-folder/"]);
+    Check(!service.List(archivePath).Any(x => x.Name.StartsWith("renamed-folder/", StringComparison.Ordinal)), "delete virtual folder and its contents");
 
     var sevenZipPath = Path.Combine(root, "sample.7z");
     service.CreateAny(sevenZipPath, [inputA]);
@@ -46,6 +50,16 @@ try
     var sevenZipExtract = Path.Combine(root, "7z-extract");
     service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], sevenZipExtract);
     Check(await File.ReadAllTextAsync(Path.Combine(sevenZipExtract, "alpha.txt")) == "alpha payload", "extract 7z entry");
+    var progress = new CountingProgress();
+    var progressExtract = Path.Combine(root, "progress-extract");
+    service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], progressExtract, null, progress, CancellationToken.None);
+    Check(progress.Count > 0, "extraction reports byte progress");
+    using var cancelledToken = new CancellationTokenSource();
+    cancelledToken.Cancel();
+    var cancellationObserved = false;
+    try { service.ExtractEntriesAny(sevenZipPath, ["alpha.txt"], Path.Combine(root, "cancelled-extract"), null, null, cancelledToken.Token); }
+    catch (OperationCanceledException) { cancellationObserved = true; }
+    Check(cancellationObserved, "extraction responds to cancellation");
     service.AddFiles(sevenZipPath, [inputB]);
     Check(service.ListAny(sevenZipPath).Any(x => x.Name == "beta.txt"), "add file to 7z");
     service.RenameEntry(sevenZipPath, "beta.txt", "renamed-beta.txt");
@@ -152,4 +166,11 @@ try
 finally
 {
     try { Directory.Delete(root, recursive: true); } catch { }
+}
+
+
+sealed class CountingProgress : IProgress<ArchiveProgress>
+{
+    public int Count { get; private set; }
+    public void Report(ArchiveProgress value) => Count++;
 }
