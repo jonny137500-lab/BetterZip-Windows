@@ -38,7 +38,7 @@ public partial class MainWindow : Window
 
     private void Open_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog { Filter = "Supported archives|*.zip;*.7z;*.rar;*.tar;*.tgz;*.tar.gz;*.tar.bz2;*.tar.xz;*.ar;*.arj;*.ace;*.lzw|All files (*.*)|*.*" };
+        var dialog = new OpenFileDialog { Filter = "Supported archives|*.zip;*.7z;*.7z.001;*.rar;*.tar;*.tgz;*.tar.gz;*.tar.bz2;*.tar.xz;*.ar;*.arj;*.ace;*.lzw|All files (*.*)|*.*" };
         if (dialog.ShowDialog() != true) return;
         TryOpenArchive(dialog.FileName);
     }
@@ -57,7 +57,7 @@ public partial class MainWindow : Window
             catch
             {
                 var ext = Path.GetExtension(fullPath);
-                if (!new[] { ".zip", ".7z", ".rar" }.Contains(ext, StringComparer.OrdinalIgnoreCase)) throw;
+                if (!new[] { ".zip", ".7z", ".rar" }.Contains(ext, StringComparer.OrdinalIgnoreCase) && !fullPath.EndsWith(".7z.001", StringComparison.OrdinalIgnoreCase)) throw;
                 var prompt = new PasswordPromptWindow(Path.GetFileName(fullPath)) { Owner = this };
                 if (prompt.ShowDialog() != true) return false;
                 password = prompt.Password;
@@ -101,7 +101,7 @@ public partial class MainWindow : Window
         var existing = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToArray();
         if (existing.Length == 0) return;
         if (existing.Length == 1 && File.Exists(existing[0]) &&
-            string.Equals(Path.GetExtension(existing[0]), ".zip", StringComparison.OrdinalIgnoreCase))
+            ZipArchiveService.CanReadFormat(existing[0]))
         {
             TryOpenArchive(existing[0]);
             return;
@@ -292,6 +292,10 @@ public partial class MainWindow : Window
             await RunBusyAsync("Creating archive…", () => service.CreateFromPathsAny(save.FileName, files.FileNames, overwrite: true, compressionLevel: SelectedCompressionLevel));
             archivePath = save.FileName;
             currentArchivePassword = null;
+            currentFolderPrefix = "";
+            nestedReadOnly = false;
+            navigationStack.Clear();
+            ClearNestedArchives();
             ArchiveLabel.Text = archivePath;
             UpdateArchiveCapabilities();
             RefreshEntries();
@@ -372,7 +376,7 @@ public partial class MainWindow : Window
             var count = 0;
             await RunBusyAsync("Verifying archive data and CRC checks…", () => count = service.VerifyAny(path, currentArchivePassword));
             StatusText.Text = $"Verified {count} file entries; no corruption detected";
-            MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "ZIP verification", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "Archive verification", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -424,7 +428,7 @@ public partial class MainWindow : Window
             pendingEditEntryName = row.Name;
             pendingEditFile = tempFile;
             SaveBackButton.IsEnabled = true;
-            StatusText.Text = $"Editing {row.Name} externally. Save in that app, then click Save back to ZIP.";
+            StatusText.Text = $"Editing {row.Name} externally. Save in that app, then click Save back to archive.";
         }
         catch (Exception ex) { ShowError(ex); }
     }
