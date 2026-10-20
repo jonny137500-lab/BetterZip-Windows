@@ -15,6 +15,7 @@ public partial class MainWindow : Window
     private string? pendingEditArchivePath;
     private string? pendingEditEntryName;
     private string? pendingEditFile;
+    private string? currentArchivePassword;
 
     public MainWindow()
     {
@@ -43,8 +44,21 @@ public partial class MainWindow : Window
             if (!File.Exists(path)) throw new FileNotFoundException("Archive file not found.", path);
             if (!ZipArchiveService.CanReadFormat(path))
                 throw new NotSupportedException("This archive format is not supported.");
-            archivePath = Path.GetFullPath(path);
-            var entries = service.ListAny(archivePath);
+            var fullPath = Path.GetFullPath(path);
+            string? password = null;
+            IReadOnlyList<ArchiveEntryRow> entries;
+            try { entries = service.ListAny(fullPath); }
+            catch
+            {
+                var ext = Path.GetExtension(fullPath);
+                if (!new[] { ".zip", ".7z", ".rar" }.Contains(ext, StringComparer.OrdinalIgnoreCase)) throw;
+                var prompt = new PasswordPromptWindow(Path.GetFileName(fullPath)) { Owner = this };
+                if (prompt.ShowDialog() != true) return;
+                password = prompt.Password;
+                entries = service.ListAny(fullPath, password);
+            }
+            archivePath = fullPath;
+            currentArchivePassword = password;
             ArchiveLabel.Text = archivePath;
             EntriesGrid.ItemsSource = entries.Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
             UpdateArchiveCapabilities();
@@ -91,7 +105,7 @@ public partial class MainWindow : Window
     private void RefreshEntries()
     {
         if (archivePath is null) return;
-        var entries = service.ListAny(archivePath)
+        var entries = service.ListAny(archivePath, currentArchivePassword)
             .Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
         EntriesGrid.ItemsSource = entries;
         StatusText.Text = $"{entries.Count} entries";
@@ -112,6 +126,7 @@ public partial class MainWindow : Window
         {
             service.CreateAny(save.FileName, files.FileNames, overwrite: true);
             archivePath = save.FileName;
+            currentArchivePassword = null;
             ArchiveLabel.Text = archivePath;
             UpdateArchiveCapabilities();
             RefreshEntries();
@@ -136,7 +151,7 @@ public partial class MainWindow : Window
         if (selected.Count == 0) { MessageBox.Show("Select one or more entries first."); return; }
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
-        try { service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName); StatusText.Text = "Extraction complete"; }
+        try { service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName, currentArchivePassword); StatusText.Text = "Extraction complete"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -148,7 +163,7 @@ public partial class MainWindow : Window
         try
         {
             var names = service.ListAny(archivePath!).Select(x => x.Name).ToList();
-            service.ExtractEntriesAny(archivePath!, names, dialog.FolderName);
+            service.ExtractEntriesAny(archivePath!, names, dialog.FolderName, currentArchivePassword);
             StatusText.Text = $"Extracted {names.Count} entries";
         }
         catch (Exception ex) { ShowError(ex); }
@@ -161,7 +176,7 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text = "Verifying archive data and CRC checks…";
-            var count = await Task.Run(() => service.VerifyAny(path));
+            var count = await Task.Run(() => service.VerifyAny(path, currentArchivePassword));
             StatusText.Text = $"Verified {count} file entries; no corruption detected";
             MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "ZIP verification", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -254,9 +269,26 @@ public partial class MainWindow : Window
         catch { }
     }
 
+    private void Unlock_Click(object sender, RoutedEventArgs e)
+    {
+        if (archivePath is null) return;
+        var prompt = new PasswordPromptWindow(Path.GetFileName(archivePath)) { Owner = this };
+        if (prompt.ShowDialog() != true) return;
+        try
+        {
+            var password = prompt.Password;
+            var entries = service.ListAny(archivePath, password);
+            currentArchivePassword = password;
+            EntriesGrid.ItemsSource = entries.Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
+            UpdateArchiveCapabilities();
+            StatusText.Text = "Archive unlocked for reading";
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
     private void UpdateArchiveCapabilities()
     {
-        var writable = archivePath is not null && ZipArchiveService.CanModifyFormat(archivePath);
+        var writable = archivePath is not null && ZipArchiveService.CanModifyFormat(archivePath) && string.IsNullOrEmpty(currentArchivePassword);
         AddButton.IsEnabled = writable;
         RenameButton.IsEnabled = writable;
         DeleteButton.IsEnabled = writable;
