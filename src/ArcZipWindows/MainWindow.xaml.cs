@@ -325,6 +325,9 @@ public partial class MainWindow : Window
             archivePath = save.FileName;
             currentArchivePassword = null;
             currentFolderPrefix = "";
+            nestedReadOnly = false;
+            navigationStack.Clear();
+            ClearNestedArchives();
             ArchiveLabel.Text = archivePath;
             UpdateArchiveCapabilities();
             RefreshEntries();
@@ -349,7 +352,16 @@ public partial class MainWindow : Window
         if (selected.Count == 0) { MessageBox.Show("Select one or more entries first."); return; }
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
-        try { await RunBusyAsync("Extracting selected entries…", () => service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName, currentArchivePassword)); StatusText.Text = "Extraction complete"; }
+        try
+        {
+            var progress = new Progress<ArchiveProgress>(p =>
+            {
+                OperationProgressBar.Value = p.PercentComplete;
+                StatusText.Text = $"Extracting {p.CurrentEntry} · {p.PercentComplete:0}%";
+            });
+            await RunBusyAsync("Extracting selected entries…", token => service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName, currentArchivePassword, progress, token), progress);
+            StatusText.Text = "Extraction complete";
+        }
         catch (OperationCanceledException) { StatusText.Text = "Extraction cancelled."; }
         catch (Exception ex) { ShowError(ex); }
     }
