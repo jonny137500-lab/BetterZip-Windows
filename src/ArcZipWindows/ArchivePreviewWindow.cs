@@ -20,6 +20,8 @@ public sealed class ArchivePreviewWindow : Window
         ".png", ".jpg", ".jpeg", ".bmp", ".gif", ".tif", ".tiff"
     };
 
+    private bool preserveTempFile;
+
     public ArchivePreviewWindow(string displayName, string filePath)
     {
         Title = $"Preview — {displayName}";
@@ -50,7 +52,7 @@ public sealed class ArchivePreviewWindow : Window
         var openButton = new Button { Content = "Open in default app", Padding = new Thickness(14, 7, 14, 7), Margin = new Thickness(0, 0, 8, 0) };
         openButton.Click += (_, _) =>
         {
-            try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); }
+            try { Process.Start(new ProcessStartInfo(filePath) { UseShellExecute = true }); preserveTempFile = true; }
             catch (Exception ex) { MessageBox.Show(this, ex.Message, "Cannot open file", MessageBoxButton.OK, MessageBoxImage.Error); }
         };
         var closeButton = new Button { Content = "Close", IsDefault = true, IsCancel = true, Padding = new Thickness(14, 7, 14, 7) };
@@ -117,6 +119,7 @@ public sealed class ArchivePreviewWindow : Window
         Content = root;
         Closed += (_, _) =>
         {
+            if (preserveTempFile) return;
             try
             {
                 var directory = Path.GetDirectoryName(filePath);
