@@ -16,7 +16,7 @@ Early development. The current milestone implements ZIP-only desktop operations 
 - Safer extraction that rejects path traversal
 - ZIP entry operations serialized per archive path to reduce concurrent rewrite races
 - Optional local REST API, loopback-only, bearer token required, off by default
-- GitHub Actions build and ZIP smoke tests
+- GitHub Actions build, ZIP/API smoke tests, self-contained x64 build, and installer artifact
 
 ### Not yet implemented / not verified
 - CI green status for the latest commit and smoke-test results (check Actions)
@@ -25,7 +25,7 @@ Early development. The current milestone implements ZIP-only desktop operations 
 - split volumes and nested archive browsing
 - automatic background monitoring of external editor changes (current workflow requires clicking “Save back to ZIP”)
 - Windows Explorer context menu and file associations
-- installer, signing, update channel, accessibility review and localization
+- code signing, update channel, accessibility review and localization
 - benchmarks, load testing, fuzzing and security audit
 - guaranteed memory/CPU figures (must be measured; zero memory use is impossible)
 
@@ -50,3 +50,8 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md). The app does not start a residen
 ## License
 
 MIT for this project source. Any future third-party archive engine must keep its own license and notices.
+
+
+## Windows installer
+
+The Windows build workflow publishes two artifacts: the self-contained x64 application folder and `ArcZip-Windows-Setup.exe`. The installer is currently unsigned; Windows SmartScreen may display a warning. Install only from this repository's Actions artifacts and review the source before use.
