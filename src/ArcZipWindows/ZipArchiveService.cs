@@ -1,10 +1,10 @@
 using System.IO;
-using System.Collections.Concurrent;
 using System.IO.Compression;
+using System.Collections.Concurrent;
 
 namespace ArcZipWindows;
 
-/// <summary>ZIP-only archive operations. Entries stream to disk; complete file payloads are never buffered in memory.</summary>
+/// <summary>ZIP-only archive operations. File payloads are streamed rather than loaded whole into memory.</summary>
 public sealed class ZipArchiveService
 {
     private static readonly ConcurrentDictionary<string, object> PathLocks = new(StringComparer.OrdinalIgnoreCase);
@@ -44,8 +44,7 @@ public sealed class ZipArchiveService
                         var info = new FileInfo(Path.GetFullPath(file));
                         if (!info.Exists) throw new FileNotFoundException("Input file not found.", file);
                         var entry = archive.CreateEntry(info.Name, CompressionLevel.Optimal);
-                        var timestamp = new DateTimeOffset(info.LastWriteTime);
-                        if (timestamp.Year >= 1980 && timestamp.Year <= 2107) entry.LastWriteTime = timestamp;
+                        SetTimestamp(entry, info.LastWriteTime);
                         using var input = File.OpenRead(info.FullName);
                         using var output = entry.Open();
                         input.CopyTo(output);
@@ -59,10 +58,10 @@ public sealed class ZipArchiveService
 
     public void AddFiles(string archivePath, IEnumerable<string> files)
     {
-        var additions = files.Select(Path.GetFullPath).ToList();
+        var additions = files.Select(Path.GetFullPath).Select(file => (Path: file, EntryName: Path.GetFileName(file))).ToList();
         lock (Gate(archivePath))
         {
-            var names = additions.Select(Path.GetFileName).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var names = additions.Select(x => x.EntryName).ToHashSet(StringComparer.OrdinalIgnoreCase);
             Rewrite(archivePath, entry => names.Contains(entry.FullName) ? null : entry.FullName, additions);
         }
     }
@@ -89,6 +88,37 @@ public sealed class ZipArchiveService
         }
     }
 
+    public void ExportEntryToFile(string archivePath, string entryName, string destinationFile)
+    {
+        lock (Gate(archivePath))
+        {
+            using var archive = ZipFile.OpenRead(archivePath);
+            var entry = archive.GetEntry(entryName) ?? throw new FileNotFoundException($"Archive entry not found: {entryName}");
+            if (entry.FullName.EndsWith('/')) throw new ArgumentException("Select a file, not a folder.");
+            var fullDestination = Path.GetFullPath(destinationFile);
+            Directory.CreateDirectory(Path.GetDirectoryName(fullDestination)!);
+            using var input = entry.Open();
+            using var output = new FileStream(fullDestination, FileMode.Create, FileAccess.Write, FileShare.None);
+            input.CopyTo(output);
+        }
+    }
+
+    public void ReplaceEntry(string archivePath, string entryName, string replacementFile)
+    {
+        ValidateEntryName(entryName);
+        var fullReplacement = Path.GetFullPath(replacementFile);
+        if (!File.Exists(fullReplacement)) throw new FileNotFoundException("Replacement file not found.", replacementFile);
+        lock (Gate(archivePath))
+        {
+            using (var archive = ZipFile.OpenRead(archivePath))
+            {
+                var existing = archive.GetEntry(entryName) ?? throw new FileNotFoundException($"Archive entry not found: {entryName}");
+                if (existing.FullName.EndsWith('/')) throw new ArgumentException("A folder entry cannot be replaced with a file.");
+            }
+            Rewrite(archivePath, entry => entry.FullName == entryName ? null : entry.FullName, [(Path: fullReplacement, EntryName: entryName)]);
+        }
+    }
+
     private static void ValidateEntryName(string name)
     {
         if (string.IsNullOrWhiteSpace(name) || name.StartsWith('/') || name.Contains('\\') ||
@@ -99,7 +129,13 @@ public sealed class ZipArchiveService
             throw new ArgumentException("Entry names cannot contain empty, '.' or '..' path segments.");
     }
 
-    private static void Rewrite(string archivePath, Func<ZipArchiveEntry, string?> map, IReadOnlyList<string> additions)
+    private static void SetTimestamp(ZipArchiveEntry entry, DateTime timestamp)
+    {
+        var offset = new DateTimeOffset(timestamp);
+        if (offset.Year >= 1980 && offset.Year <= 2107) entry.LastWriteTime = offset;
+    }
+
+    private static void Rewrite(string archivePath, Func<ZipArchiveEntry, string?> map, IReadOnlyList<(string Path, string EntryName)> additions)
     {
         var fullPath = Path.GetFullPath(archivePath);
         var tempPath = fullPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
@@ -113,19 +149,17 @@ public sealed class ZipArchiveService
                     var name = map(entry);
                     if (name is null) continue;
                     var target = destination.CreateEntry(name, CompressionLevel.Optimal);
-                    if (entry.LastWriteTime.Year >= 1980 && entry.LastWriteTime.Year <= 2107)
-                        target.LastWriteTime = entry.LastWriteTime;
+                    if (entry.LastWriteTime.Year >= 1980 && entry.LastWriteTime.Year <= 2107) target.LastWriteTime = entry.LastWriteTime;
                     using var input = entry.Open();
                     using var output = target.Open();
                     input.CopyTo(output);
                 }
-                foreach (var file in additions)
+                foreach (var item in additions)
                 {
-                    var info = new FileInfo(file);
-                    if (!info.Exists) throw new FileNotFoundException("Input file not found.", file);
-                    var target = destination.CreateEntry(info.Name, CompressionLevel.Optimal);
-                    var timestamp = new DateTimeOffset(info.LastWriteTime);
-                    if (timestamp.Year >= 1980 && timestamp.Year <= 2107) target.LastWriteTime = timestamp;
+                    var info = new FileInfo(item.Path);
+                    if (!info.Exists) throw new FileNotFoundException("Input file not found.", item.Path);
+                    var target = destination.CreateEntry(item.EntryName, CompressionLevel.Optimal);
+                    SetTimestamp(target, info.LastWriteTime);
                     using var input = File.OpenRead(info.FullName);
                     using var output = target.Open();
                     input.CopyTo(output);
