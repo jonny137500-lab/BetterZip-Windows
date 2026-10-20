@@ -17,10 +17,11 @@ public partial class MainWindow : Window
     private string? pendingEditFile;
     private string? currentArchivePassword;
     private bool isBusy;
+    private bool nestedReadOnly;
     private string currentFolderPrefix = "";
     private readonly Stack<ArchiveNavigationState> navigationStack = new();
     private readonly HashSet<string> nestedTempFiles = new(StringComparer.OrdinalIgnoreCase);
-    private sealed record ArchiveNavigationState(string ArchivePath, string? Password, string FolderPrefix, string DisplayLabel);
+    private sealed record ArchiveNavigationState(string ArchivePath, string? Password, string FolderPrefix, string DisplayLabel, string EntryName, bool ReadOnly);
 
     public MainWindow()
     {
@@ -65,6 +66,7 @@ public partial class MainWindow : Window
             if (resetNavigation)
             {
                 currentFolderPrefix = "";
+                nestedReadOnly = false;
                 navigationStack.Clear();
                 ClearNestedArchives();
             }
@@ -171,7 +173,7 @@ public partial class MainWindow : Window
         nestedTempFiles.Clear();
     }
 
-    private void Up_Click(object sender, RoutedEventArgs e)
+    private async void Up_Click(object sender, RoutedEventArgs e)
     {
         SearchBox.Text = "";
         if (currentFolderPrefix.Length > 0)
@@ -184,7 +186,17 @@ public partial class MainWindow : Window
         }
         if (navigationStack.Count == 0) return;
         var current = archivePath;
-        var state = navigationStack.Pop();
+        var state = navigationStack.Peek();
+        if (current is not null && nestedTempFiles.Contains(current) && !state.ReadOnly)
+        {
+            try
+            {
+                await RunBusyAsync("Saving nested archive back to its parent…",
+                    () => service.ReplaceEntry(state.ArchivePath, state.EntryName, current));
+            }
+            catch (Exception ex) { ShowError(ex); return; }
+        }
+        navigationStack.Pop();
         if (current is not null && nestedTempFiles.Remove(current))
         {
             try { if (File.Exists(current)) File.Delete(current); } catch { }
@@ -198,6 +210,7 @@ public partial class MainWindow : Window
         archivePath = state.ArchivePath;
         currentArchivePassword = state.Password;
         currentFolderPrefix = state.FolderPrefix;
+        nestedReadOnly = state.ReadOnly;
         ArchiveLabel.Text = state.DisplayLabel;
         RefreshEntries();
         UpdateArchiveCapabilities();
@@ -223,7 +236,9 @@ public partial class MainWindow : Window
         try
         {
             await RunBusyAsync("Opening nested archive…", () => service.ExportEntryToFile(parentPath, row.Name, nestedPath, currentArchivePassword));
-            navigationStack.Push(new ArchiveNavigationState(parentPath, currentArchivePassword, currentFolderPrefix, parentLabel));
+            var parentReadOnly = nestedReadOnly || !ZipArchiveService.CanModifyFormat(parentPath) || !string.IsNullOrEmpty(currentArchivePassword);
+            navigationStack.Push(new ArchiveNavigationState(parentPath, currentArchivePassword, currentFolderPrefix, parentLabel, row.Name, parentReadOnly));
+            nestedReadOnly = parentReadOnly;
             nestedTempFiles.Add(nestedPath);
             currentFolderPrefix = "";
             if (!TryOpenArchive(nestedPath, resetNavigation: false))
@@ -232,6 +247,9 @@ public partial class MainWindow : Window
                 nestedTempFiles.Remove(nestedPath);
                 try { Directory.Delete(directory, recursive: true); } catch { }
                 archivePath = parentPath;
+                currentArchivePassword = navigationStack.Count > 0 ? navigationStack.Peek().Password : null;
+                currentFolderPrefix = navigationStack.Count > 0 ? navigationStack.Peek().FolderPrefix : "";
+                nestedReadOnly = navigationStack.Count > 0 && navigationStack.Peek().ReadOnly;
                 ArchiveLabel.Text = parentLabel;
                 RefreshEntries();
                 UpdateArchiveCapabilities();
@@ -443,7 +461,7 @@ public partial class MainWindow : Window
 
     private void UpdateArchiveCapabilities()
     {
-        var writable = archivePath is not null && ZipArchiveService.CanModifyFormat(archivePath) && string.IsNullOrEmpty(currentArchivePassword);
+        var writable = archivePath is not null && ZipArchiveService.CanModifyFormat(archivePath) && string.IsNullOrEmpty(currentArchivePassword) && !nestedReadOnly;
         AddButton.IsEnabled = writable;
         RenameButton.IsEnabled = writable;
         DeleteButton.IsEnabled = writable;
