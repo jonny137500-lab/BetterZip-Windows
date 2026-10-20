@@ -21,19 +21,74 @@ public partial class MainWindow : Window
         InitializeComponent();
         apiServer = new LocalApiServer(service);
         Closed += async (_, _) => { await apiServer.StopAsync(); CleanupPendingEdit(); };
+        Loaded += (_, _) =>
+        {
+            var startupArchive = Environment.GetCommandLineArgs().Skip(1)
+                .FirstOrDefault(arg => arg.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && File.Exists(arg));
+            if (startupArchive is not null) TryOpenArchive(startupArchive);
+        };
     }
 
     private void Open_Click(object sender, RoutedEventArgs e)
     {
         var dialog = new OpenFileDialog { Filter = "ZIP archives (*.zip)|*.zip|All files (*.*)|*.*" };
         if (dialog.ShowDialog() != true) return;
+        TryOpenArchive(dialog.FileName);
+    }
+
+    private void TryOpenArchive(string path)
+    {
         try
         {
-            using var _ = ZipFile.OpenRead(dialog.FileName);
-            archivePath = dialog.FileName;
+            if (!File.Exists(path)) throw new FileNotFoundException("Archive file not found.", path);
+            if (!string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase))
+                throw new NotSupportedException("This build currently supports ZIP archives only.");
+            using var _ = ZipFile.OpenRead(path);
+            archivePath = Path.GetFullPath(path);
             ArchiveLabel.Text = archivePath;
             RefreshEntries();
             StatusText.Text = "Archive opened";
+        }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private void Window_DragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = DragDropEffects.Copy;
+            e.Handled = true;
+        }
+        else
+        {
+            e.Effects = DragDropEffects.None;
+            e.Handled = true;
+        }
+    }
+
+    private void Window_Drop(object sender, DragEventArgs e)
+    {
+        if (!e.Data.GetDataPresent(DataFormats.FileDrop) || e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return;
+        var existing = paths.Where(p => File.Exists(p) || Directory.Exists(p)).ToArray();
+        if (existing.Length == 0) return;
+        if (existing.Length == 1 && File.Exists(existing[0]) &&
+            string.Equals(Path.GetExtension(existing[0]), ".zip", StringComparison.OrdinalIgnoreCase))
+        {
+            TryOpenArchive(existing[0]);
+            return;
+        }
+        if (!RequireArchive()) return;
+        try
+        {
+            var files = existing.Where(File.Exists).ToArray();
+            if (files.Length == 0)
+            {
+                MessageBox.Show("Drop files onto an open ZIP archive. Folder import is not supported yet.");
+                return;
+            }
+            service.AddFiles(archivePath!, files);
+            RefreshEntries();
+            StatusText.Text = $"Added {files.Length} dropped file(s)";
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -86,6 +141,20 @@ public partial class MainWindow : Window
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
         try { service.ExtractEntries(archivePath!, selected, dialog.FolderName); StatusText.Text = "Extraction complete"; }
+        catch (Exception ex) { ShowError(ex); }
+    }
+
+    private void ExtractAll_Click(object sender, RoutedEventArgs e)
+    {
+        if (!RequireArchive()) return;
+        var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
+        if (dialog.ShowDialog() != true) return;
+        try
+        {
+            var names = service.List(archivePath!).Select(x => x.Name).ToList();
+            service.ExtractEntries(archivePath!, names, dialog.FolderName);
+            StatusText.Text = $"Extracted {names.Count} entries";
+        }
         catch (Exception ex) { ShowError(ex); }
     }
 
