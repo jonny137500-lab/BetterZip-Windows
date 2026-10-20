@@ -47,6 +47,18 @@ try
     service.DeleteEntries(archivePath, ["renamed.txt"]);
     Check(!service.List(archivePath).Any(x => x.Name == "renamed.txt"), "delete entry");
 
+
+    using (var zip = ZipFile.Open(archivePath, ZipArchiveMode.Update))
+    using (var writer = new StreamWriter(zip.CreateEntry("folder/nested.txt").Open())) writer.Write("before edit");
+    var exported = Path.Combine(root, "external-edit.txt");
+    service.ExportEntryToFile(archivePath, "folder/nested.txt", exported);
+    Check(await File.ReadAllTextAsync(exported) == "before edit", "export entry for external editing");
+    await File.WriteAllTextAsync(exported, "after edit");
+    service.ReplaceEntry(archivePath, "folder/nested.txt", exported);
+    var exportedAgain = Path.Combine(root, "external-edit-verified.txt");
+    service.ExportEntryToFile(archivePath, "folder/nested.txt", exportedAgain);
+    Check(await File.ReadAllTextAsync(exportedAgain) == "after edit", "replace nested archive entry content");
+
     var maliciousPath = Path.Combine(root, "malicious.zip");
     using (var zip = ZipFile.Open(maliciousPath, ZipArchiveMode.Create))
     using (var writer = new StreamWriter(zip.CreateEntry("../escape.txt").Open())) writer.Write("not allowed");
