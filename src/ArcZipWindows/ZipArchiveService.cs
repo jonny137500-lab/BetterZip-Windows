@@ -52,7 +52,7 @@ public sealed class ZipArchiveService
     /// <summary>Lists supported archive formats without extracting file contents.</summary>
     public IReadOnlyList<ArchiveEntryRow> ListAny(string archivePath, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) return List(archivePath);
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password)) return List(archivePath);
         lock (Gate(archivePath))
         {
             var rows = new List<ArchiveEntryRow>();
@@ -101,18 +101,6 @@ public sealed class ZipArchiveService
         throw new NotSupportedException("Writing this format is not supported. Use ZIP, 7z, TAR or TAR.GZ.");
     }
 
-    private static (ArchiveType Type, WriterOptions Options) GetWriterSettings(string path)
-    {
-        var ext = Path.GetExtension(path);
-        if (ext.Equals(".7z", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.SevenZip, new SevenZipWriterOptions(CompressionType.LZMA2));
-        if (ext.Equals(".tgz", StringComparison.OrdinalIgnoreCase) ||
-            path.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.GZip));
-        if (ext.Equals(".tar", StringComparison.OrdinalIgnoreCase))
-            return (ArchiveType.Tar, WriterOptions.ForTar(CompressionType.None));
-        throw new NotSupportedException("Writing this format is not supported. Use ZIP, 7z, TAR or TAR.GZ.");
-    }
 
     /// <summary>Creates ZIP, 7z, TAR and TAR.GZ archives.</summary>
     public void CreateAny(string destination, IEnumerable<string> files, bool overwrite = false)
@@ -152,13 +140,13 @@ public sealed class ZipArchiveService
     /// <summary>Reads every non-directory entry to trigger decompression and CRC validation.</summary>
     public int VerifyAny(string archivePath, string? password = null)
     {
-        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase)) return Verify(archivePath);
+        if (Path.GetExtension(archivePath).Equals(".zip", StringComparison.OrdinalIgnoreCase) && string.IsNullOrEmpty(password)) return Verify(archivePath);
         lock (Gate(archivePath))
         {
             var verified = 0;
             if (UsesSequentialReader(archivePath))
             {
-                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath);
+                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 while (reader.MoveToNextEntry())
                 {
                     if (reader.Entry.IsDirectory) continue;
@@ -169,7 +157,7 @@ public sealed class ZipArchiveService
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
                 {
                     using var input = entry.OpenEntryStream();
@@ -321,7 +309,7 @@ public sealed class ZipArchiveService
             }
             else if (UsesSequentialReader(archivePath))
             {
-                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath);
+                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 var found = false;
                 while (reader.MoveToNextEntry())
                 {
@@ -335,7 +323,7 @@ public sealed class ZipArchiveService
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 var entry = archive.Entries.FirstOrDefault(e => e.Key == entryName) ?? throw new FileNotFoundException($"Archive entry not found: {entryName}");
                 if (entry.IsDirectory) throw new ArgumentException("Select a file, not a folder.");
                 using var input = entry.OpenEntryStream();
@@ -481,7 +469,7 @@ public sealed class ZipArchiveService
         {
             if (UsesSequentialReader(archivePath))
             {
-                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath);
+                using var reader = SharpCompress.Readers.ReaderFactory.OpenReader(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 while (reader.MoveToNextEntry())
                 {
                     var entry = reader.Entry;
@@ -497,7 +485,7 @@ public sealed class ZipArchiveService
             }
             else
             {
-                using var archive = ArchiveFactory.OpenArchive(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath, ReaderOptions.ForFilePath.WithPassword(password));
                 foreach (var entry in archive.Entries.Where(e => selected.Contains(e.Key ?? string.Empty)))
                 {
                     var key = (entry.Key ?? string.Empty).Replace('\\', '/');
