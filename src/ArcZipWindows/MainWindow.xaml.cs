@@ -24,14 +24,14 @@ public partial class MainWindow : Window
         Loaded += (_, _) =>
         {
             var startupArchive = Environment.GetCommandLineArgs().Skip(1)
-                .FirstOrDefault(arg => arg.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) && File.Exists(arg));
+                .FirstOrDefault(arg => File.Exists(arg) && ZipArchiveService.CanReadFormat(arg));
             if (startupArchive is not null) TryOpenArchive(startupArchive);
         };
     }
 
     private void Open_Click(object sender, RoutedEventArgs e)
     {
-        var dialog = new OpenFileDialog { Filter = "ZIP archives (*.zip)|*.zip|All files (*.*)|*.*" };
+        var dialog = new OpenFileDialog { Filter = "Supported archives|*.zip;*.7z;*.rar;*.tar;*.tgz;*.tar.gz;*.tar.bz2;*.tar.xz;*.ar;*.arj;*.ace;*.lzw|All files (*.*)|*.*" };
         if (dialog.ShowDialog() != true) return;
         TryOpenArchive(dialog.FileName);
     }
@@ -41,13 +41,14 @@ public partial class MainWindow : Window
         try
         {
             if (!File.Exists(path)) throw new FileNotFoundException("Archive file not found.", path);
-            if (!string.Equals(Path.GetExtension(path), ".zip", StringComparison.OrdinalIgnoreCase))
-                throw new NotSupportedException("This build currently supports ZIP archives only.");
-            using var _ = ZipFile.OpenRead(path);
+            if (!ZipArchiveService.CanReadFormat(path))
+                throw new NotSupportedException("This archive format is not supported.");
             archivePath = Path.GetFullPath(path);
+            var entries = service.ListAny(archivePath);
             ArchiveLabel.Text = archivePath;
-            RefreshEntries();
-            StatusText.Text = "Archive opened";
+            EntriesGrid.ItemsSource = entries.Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
+            UpdateArchiveCapabilities();
+            StatusText.Text = $"Opened archive · {entries.Count} entries";
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -90,7 +91,7 @@ public partial class MainWindow : Window
     private void RefreshEntries()
     {
         if (archivePath is null) return;
-        var entries = service.List(archivePath)
+        var entries = service.ListAny(archivePath)
             .Where(x => x.Name.Contains(SearchBox.Text ?? "", StringComparison.OrdinalIgnoreCase)).ToList();
         EntriesGrid.ItemsSource = entries;
         StatusText.Text = $"{entries.Count} entries";
@@ -105,15 +106,16 @@ public partial class MainWindow : Window
     {
         var files = new OpenFileDialog { Multiselect = true, Title = "Choose files to add to a new ZIP" };
         if (files.ShowDialog() != true) return;
-        var save = new SaveFileDialog { Filter = "ZIP archive (*.zip)|*.zip", DefaultExt = ".zip", FileName = "Archive.zip" };
+        var save = new SaveFileDialog { Filter = "ZIP archive (*.zip)|*.zip|7-Zip archive (*.7z)|*.7z|TAR archive (*.tar)|*.tar|TAR.GZ archive (*.tar.gz)|*.tar.gz", DefaultExt = ".zip", FileName = "Archive.zip", AddExtension = true };
         if (save.ShowDialog() != true) return;
         try
         {
-            service.Create(save.FileName, files.FileNames, overwrite: true);
+            service.CreateAny(save.FileName, files.FileNames, overwrite: true);
             archivePath = save.FileName;
             ArchiveLabel.Text = archivePath;
+            UpdateArchiveCapabilities();
             RefreshEntries();
-            StatusText.Text = "ZIP created";
+            StatusText.Text = "Archive created";
         }
         catch (Exception ex) { ShowError(ex); }
     }
@@ -134,7 +136,7 @@ public partial class MainWindow : Window
         if (selected.Count == 0) { MessageBox.Show("Select one or more entries first."); return; }
         var dialog = new OpenFolderDialog { Title = "Choose extraction folder" };
         if (dialog.ShowDialog() != true) return;
-        try { service.ExtractEntries(archivePath!, selected, dialog.FolderName); StatusText.Text = "Extraction complete"; }
+        try { service.ExtractEntriesAny(archivePath!, selected, dialog.FolderName); StatusText.Text = "Extraction complete"; }
         catch (Exception ex) { ShowError(ex); }
     }
 
@@ -145,8 +147,8 @@ public partial class MainWindow : Window
         if (dialog.ShowDialog() != true) return;
         try
         {
-            var names = service.List(archivePath!).Select(x => x.Name).ToList();
-            service.ExtractEntries(archivePath!, names, dialog.FolderName);
+            var names = service.ListAny(archivePath!).Select(x => x.Name).ToList();
+            service.ExtractEntriesAny(archivePath!, names, dialog.FolderName);
             StatusText.Text = $"Extracted {names.Count} entries";
         }
         catch (Exception ex) { ShowError(ex); }
@@ -159,7 +161,7 @@ public partial class MainWindow : Window
         try
         {
             StatusText.Text = "Verifying archive data and CRC checks…";
-            var count = await Task.Run(() => service.Verify(path));
+            var count = await Task.Run(() => service.VerifyAny(path));
             StatusText.Text = $"Verified {count} file entries; no corruption detected";
             MessageBox.Show($"Verified {count} file entries. No corruption was detected.", "ZIP verification", MessageBoxButton.OK, MessageBoxImage.Information);
         }
@@ -250,6 +252,16 @@ public partial class MainWindow : Window
             if (directory is not null && Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
         }
         catch { }
+    }
+
+    private void UpdateArchiveCapabilities()
+    {
+        var writable = archivePath is not null && ZipArchiveService.CanModifyFormat(archivePath);
+        AddButton.IsEnabled = writable;
+        RenameButton.IsEnabled = writable;
+        DeleteButton.IsEnabled = writable;
+        EditExternallyButton.IsEnabled = writable;
+        SaveBackButton.IsEnabled = writable && pendingEditFile is not null && File.Exists(pendingEditFile);
     }
 
     private void Api_Click(object sender, RoutedEventArgs e)
