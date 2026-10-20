@@ -21,6 +21,7 @@ try
 
     service.Create(archivePath, [inputA]);
     Check(service.List(archivePath).Any(x => x.Name == "alpha.txt"), "create and list ZIP");
+    Check(service.Verify(archivePath) == 1, "verify ZIP entry data and CRC");
 
     service.AddFiles(archivePath, [inputB]);
     Check(service.List(archivePath).Any(x => x.Name == "beta.txt"), "add file");
