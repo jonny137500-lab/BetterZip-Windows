@@ -88,6 +88,13 @@ try
         client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
         var health = await client.GetFromJsonAsync<Dictionary<string, string>>(api.BaseUrl + "health");
         Check(health is not null && health["status"] == "ok", "local API health endpoint");
+        var apiFolder = Path.Combine(root, "api-folder");
+        Directory.CreateDirectory(apiFolder);
+        await File.WriteAllTextAsync(Path.Combine(apiFolder, "from-api.txt"), "API folder payload");
+        var addResponse = await client.PostAsJsonAsync(api.BaseUrl + "archive/add",
+            new { archivePath, files = new[] { apiFolder } });
+        Check(addResponse.IsSuccessStatusCode, "API accepts directory import");
+        Check(service.List(archivePath).Any(x => x.Name == "api-folder/from-api.txt"), "API folder import retains relative path");
         await api.StopAsync();
         Check(!File.Exists(api.TokenPath), "API stop removes token file");
     }
