@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
@@ -6,19 +7,21 @@ using System.Text.Json;
 namespace ArcZipWindows;
 
 /// <summary>
-/// Opt-in, loopback-only REST API. It runs only while the desktop app is open and the user starts it.
+/// Opt-in loopback-only REST API. Uses TcpListener to avoid HTTP.sys URL ACL/admin requirements.
 /// </summary>
 public sealed class LocalApiServer : IAsyncDisposable
 {
     public const int Port = 47821;
     private readonly ZipArchiveService _archives;
-    private readonly HttpListener _listener = new();
+    private TcpListener? _listener;
     private CancellationTokenSource? _stop;
     private Task? _loop;
     private string? _token;
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private const int MaxHeaderBytes = 16 * 1024;
+    private const int MaxBodyBytes = 1024 * 1024;
 
-    public bool IsRunning => _listener.IsListening;
+    public bool IsRunning => _listener is not null;
     public string TokenPath => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ArcZipWindows", "api.token");
     public string BaseUrl => $"http://127.0.0.1:{Port}/api/v1/";
 
@@ -27,104 +30,125 @@ public sealed class LocalApiServer : IAsyncDisposable
     public void Start()
     {
         if (IsRunning) return;
-        _token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        var token = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
         Directory.CreateDirectory(Path.GetDirectoryName(TokenPath)!);
-        File.WriteAllText(TokenPath, _token, new UTF8Encoding(false));
-        _listener.Prefixes.Add($"http://127.0.0.1:{Port}/");
-        _listener.Start();
-        _stop = new CancellationTokenSource();
-        _loop = Task.Run(() => ListenAsync(_stop.Token));
+        File.WriteAllText(TokenPath, token, new UTF8Encoding(false));
+        try
+        {
+            var listener = new TcpListener(IPAddress.Loopback, Port);
+            listener.Start(16);
+            _listener = listener;
+            _token = token;
+            _stop = new CancellationTokenSource();
+            _loop = Task.Run(() => ListenAsync(listener, _stop.Token));
+        }
+        catch
+        {
+            try { File.Delete(TokenPath); } catch { }
+            _token = null;
+            _listener = null;
+            throw;
+        }
     }
 
     public async Task StopAsync()
     {
-        if (!IsRunning) return;
+        var listener = _listener;
+        if (listener is null) return;
         _stop?.Cancel();
-        _listener.Stop();
-        if (_loop is not null) { try { await _loop.ConfigureAwait(false); } catch (HttpListenerException) { } catch (ObjectDisposedException) { } }
-        _listener.Prefixes.Clear();
+        listener.Stop();
+        _listener = null;
+        if (_loop is not null)
+        {
+            try { await _loop.ConfigureAwait(false); }
+            catch (SocketException) { }
+            catch (ObjectDisposedException) { }
+        }
         _token = null;
         try { if (File.Exists(TokenPath)) File.Delete(TokenPath); } catch { }
-        _stop?.Dispose(); _stop = null; _loop = null;
+        _stop?.Dispose();
+        _stop = null;
+        _loop = null;
     }
 
-    private async Task ListenAsync(CancellationToken cancellationToken)
+    private async Task ListenAsync(TcpListener listener, CancellationToken cancellationToken)
     {
-        while (!cancellationToken.IsCancellationRequested && _listener.IsListening)
+        while (!cancellationToken.IsCancellationRequested)
         {
-            HttpListenerContext context;
-            try { context = await _listener.GetContextAsync().ConfigureAwait(false); }
-            catch (HttpListenerException) when (cancellationToken.IsCancellationRequested) { break; }
-            catch (ObjectDisposedException) { break; }
-            // Deliberately process requests serially: archive rewrites cannot race each other and memory stays bounded.
-            await HandleAsync(context, cancellationToken).ConfigureAwait(false);
+            TcpClient client;
+            try { client = await listener.AcceptTcpClientAsync(cancellationToken).ConfigureAwait(false); }
+            catch (OperationCanceledException) { break; }
+            catch (SocketException) when (cancellationToken.IsCancellationRequested) { break; }
+            using (client)
+            {
+                // Serial requests keep memory bounded and prevent simultaneous archive rewrites from racing.
+                await HandleClientAsync(client, cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 
-    private async Task HandleAsync(HttpListenerContext context, CancellationToken cancellationToken)
+    private async Task HandleClientAsync(TcpClient client, CancellationToken cancellationToken)
     {
+        var stream = client.GetStream();
         try
         {
-            var request = context.Request;
-            if (request.RemoteEndPoint is null || !IPAddress.IsLoopback(request.RemoteEndPoint.Address))
-            { await WriteAsync(context, 403, new { error = "Loopback clients only." }); return; }
-            if (request.HttpMethod == "OPTIONS")
-            { context.Response.Headers["Allow"] = "GET, POST, OPTIONS"; await WriteAsync(context, 204, new { }); return; }
-            if (!Authorized(request)) { await WriteAsync(context, 401, new { error = "Missing or invalid bearer token. Read api.token while the API is enabled." }); return; }
+            var request = await ReadRequestAsync(stream, cancellationToken).ConfigureAwait(false);
+            if (request is null) return;
+            if (!Authorized(request.Headers))
+            { await WriteResponseAsync(stream, 401, new { error = "Missing or invalid bearer token. Read api.token while the API is enabled." }); return; }
 
-            var path = request.Url?.AbsolutePath.TrimEnd('/') ?? "";
-            if (request.HttpMethod == "GET" && path == "/api/v1/health")
-            { await WriteAsync(context, 200, new { name = "ArcZip Windows API", version = "v1", status = "ok" }); return; }
-            if (request.HttpMethod == "GET" && path == "/api/v1/archive/entries")
+            var uri = new Uri(new Uri("http://127.0.0.1/"), request.Target);
+            var path = uri.AbsolutePath.TrimEnd('/');
+            if (request.Method == "GET" && path == "/api/v1/health")
+            { await WriteResponseAsync(stream, 200, new { name = "ArcZip Windows API", version = "v1", status = "ok" }); return; }
+            if (request.Method == "GET" && path == "/api/v1/archive/entries")
             {
-                var archive = request.QueryString["path"];
-                if (string.IsNullOrWhiteSpace(archive)) { await WriteAsync(context, 400, new { error = "Query parameter 'path' is required." }); return; }
-                await WriteAsync(context, 200, _archives.List(archive)); return;
+                var archive = QueryValue(uri.Query, "path");
+                if (string.IsNullOrWhiteSpace(archive)) { await WriteResponseAsync(stream, 400, new { error = "Query parameter 'path' is required." }); return; }
+                await WriteResponseAsync(stream, 200, _archives.List(archive)); return;
             }
-            if (request.HttpMethod == "POST")
+            if (request.Method == "POST")
             {
-                if (request.ContentLength64 < 0 || request.ContentLength64 > 1024 * 1024)
-                { await WriteAsync(context, 413, new { error = "JSON request body must be 1 MiB or smaller." }); return; }
-                var body = await JsonSerializer.DeserializeAsync<ApiRequest>(request.InputStream, JsonOptions, cancellationToken).ConfigureAwait(false) ?? new ApiRequest();
+                if (request.Body.Length == 0) { await WriteResponseAsync(stream, 400, new { error = "A JSON request body is required." }); return; }
+                var body = JsonSerializer.Deserialize<ApiRequest>(request.Body, JsonOptions) ?? new ApiRequest();
                 switch (path)
                 {
                     case "/api/v1/archive/create":
                         Require(body.Destination, "destination");
                         _archives.Create(body.Destination!, body.Files ?? []);
-                        await WriteAsync(context, 200, new { ok = true, destination = body.Destination }); return;
+                        await WriteResponseAsync(stream, 200, new { ok = true, destination = body.Destination }); return;
                     case "/api/v1/archive/add":
                         Require(body.ArchivePath, "archivePath");
                         _archives.AddFiles(body.ArchivePath!, body.Files ?? []);
-                        await WriteAsync(context, 200, new { ok = true }); return;
+                        await WriteResponseAsync(stream, 200, new { ok = true }); return;
                     case "/api/v1/archive/delete":
                         Require(body.ArchivePath, "archivePath");
                         _archives.DeleteEntries(body.ArchivePath!, body.Entries ?? []);
-                        await WriteAsync(context, 200, new { ok = true }); return;
+                        await WriteResponseAsync(stream, 200, new { ok = true }); return;
                     case "/api/v1/archive/rename":
                         Require(body.ArchivePath, "archivePath"); Require(body.OldName, "oldName"); Require(body.NewName, "newName");
                         _archives.RenameEntry(body.ArchivePath!, body.OldName!, body.NewName!);
-                        await WriteAsync(context, 200, new { ok = true }); return;
+                        await WriteResponseAsync(stream, 200, new { ok = true }); return;
                     case "/api/v1/archive/extract":
                         Require(body.ArchivePath, "archivePath"); Require(body.OutputDirectory, "outputDirectory");
                         _archives.ExtractEntries(body.ArchivePath!, body.Entries ?? [], body.OutputDirectory!);
-                        await WriteAsync(context, 200, new { ok = true }); return;
+                        await WriteResponseAsync(stream, 200, new { ok = true }); return;
                 }
             }
-            await WriteAsync(context, 404, new { error = "Unknown endpoint." });
+            await WriteResponseAsync(stream, 404, new { error = "Unknown endpoint." });
         }
-        catch (JsonException ex) { await SafeWriteAsync(context, 400, new { error = "Invalid JSON", detail = ex.Message }); }
-        catch (ArgumentException ex) { await SafeWriteAsync(context, 400, new { error = ex.Message }); }
-        catch (FileNotFoundException ex) { await SafeWriteAsync(context, 404, new { error = ex.Message }); }
-        catch (Exception ex) { await SafeWriteAsync(context, 500, new { error = ex.Message }); }
-        finally { try { context.Response.Close(); } catch { } }
+        catch (InvalidDataException ex) { await SafeWriteAsync(stream, 400, new { error = ex.Message }); }
+        catch (JsonException ex) { await SafeWriteAsync(stream, 400, new { error = "Invalid JSON", detail = ex.Message }); }
+        catch (ArgumentException ex) { await SafeWriteAsync(stream, 400, new { error = ex.Message }); }
+        catch (FileNotFoundException ex) { await SafeWriteAsync(stream, 404, new { error = ex.Message }); }
+        catch (Exception ex) { await SafeWriteAsync(stream, 500, new { error = ex.Message }); }
     }
 
-    private bool Authorized(HttpListenerRequest request)
+    private bool Authorized(IReadOnlyDictionary<string, string> headers)
     {
-        if (_token is null) return false;
-        var supplied = request.Headers["Authorization"];
-        if (supplied is null || !supplied.StartsWith("Bearer ", StringComparison.Ordinal)) return false;
-        var actual = Encoding.UTF8.GetBytes(supplied[7..]);
+        if (_token is null || !headers.TryGetValue("authorization", out var supplied) ||
+            !supplied.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase)) return false;
+        var actual = Encoding.UTF8.GetBytes(supplied[7..].Trim());
         var expected = Encoding.UTF8.GetBytes(_token);
         return actual.Length == expected.Length && CryptographicOperations.FixedTimeEquals(actual, expected);
     }
@@ -132,20 +156,78 @@ public sealed class LocalApiServer : IAsyncDisposable
     private static void Require(string? value, string name)
     { if (string.IsNullOrWhiteSpace(value)) throw new ArgumentException($"'{name}' is required."); }
 
-    private static async Task WriteAsync(HttpListenerContext context, int status, object value)
+    private static string? QueryValue(string query, string key)
     {
-        context.Response.StatusCode = status;
-        context.Response.ContentType = "application/json; charset=utf-8";
-        context.Response.ContentEncoding = Encoding.UTF8;
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
-        context.Response.ContentLength64 = bytes.Length;
-        if (status != 204) await context.Response.OutputStream.WriteAsync(bytes).ConfigureAwait(false);
+        foreach (var pair in query.TrimStart('?').Split('&', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var parts = pair.Split('=', 2);
+            if (Uri.UnescapeDataString(parts[0].Replace('+', ' ')).Equals(key, StringComparison.OrdinalIgnoreCase))
+                return Uri.UnescapeDataString((parts.Length > 1 ? parts[1] : "").Replace('+', ' '));
+        }
+        return null;
     }
-    private static async Task SafeWriteAsync(HttpListenerContext context, int status, object value)
-    { try { await WriteAsync(context, status, value).ConfigureAwait(false); } catch { } }
+
+    private static async Task<RequestData?> ReadRequestAsync(NetworkStream stream, CancellationToken cancellationToken)
+    {
+        using var headerBuffer = new MemoryStream();
+        var one = new byte[1];
+        var matched = 0;
+        while (headerBuffer.Length < MaxHeaderBytes)
+        {
+            var read = await stream.ReadAsync(one, cancellationToken).ConfigureAwait(false);
+            if (read == 0) return null;
+            headerBuffer.WriteByte(one[0]);
+            matched = (matched, one[0]) switch
+            {
+                (0, 13) => 1, (1, 10) => 2, (2, 13) => 3, (3, 10) => 4,
+                (_, 13) => 1, _ => 0
+            };
+            if (matched == 4) break;
+        }
+        if (matched != 4) throw new InvalidDataException("HTTP headers are too large or malformed.");
+        var headerText = Encoding.ASCII.GetString(headerBuffer.ToArray());
+        var lines = headerText.Split("\r\n", StringSplitOptions.None);
+        var first = lines[0].Split(' ', 3);
+        if (first.Length < 2) throw new InvalidDataException("Malformed HTTP request line.");
+        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var line in lines.Skip(1))
+        {
+            if (string.IsNullOrEmpty(line)) break;
+            var colon = line.IndexOf(':');
+            if (colon <= 0) continue;
+            headers[line[..colon].Trim().ToLowerInvariant()] = line[(colon + 1)..].Trim();
+        }
+        var length = 0;
+        if (headers.TryGetValue("content-length", out var contentLength) &&
+            (!int.TryParse(contentLength, out length) || length < 0 || length > MaxBodyBytes))
+            throw new InvalidDataException("JSON request body must be 1 MiB or smaller.");
+        var body = new byte[length];
+        var offset = 0;
+        while (offset < length)
+        {
+            var read = await stream.ReadAsync(body.AsMemory(offset, length - offset), cancellationToken).ConfigureAwait(false);
+            if (read == 0) throw new InvalidDataException("Request body ended unexpectedly.");
+            offset += read;
+        }
+        return new RequestData(first[0].ToUpperInvariant(), first[1], headers, body);
+    }
+
+    private static async Task WriteResponseAsync(NetworkStream stream, int status, object value)
+    {
+        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, JsonOptions);
+        var reason = status switch { 200 => "OK", 204 => "No Content", 400 => "Bad Request", 401 => "Unauthorized", 403 => "Forbidden", 404 => "Not Found", 413 => "Payload Too Large", _ => "Internal Server Error" };
+        var header = Encoding.ASCII.GetBytes($"HTTP/1.1 {status} {reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: {bytes.Length}\r\nConnection: close\r\nCache-Control: no-store\r\n\r\n");
+        await stream.WriteAsync(header).ConfigureAwait(false);
+        await stream.WriteAsync(bytes).ConfigureAwait(false);
+        await stream.FlushAsync().ConfigureAwait(false);
+    }
+
+    private static async Task SafeWriteAsync(NetworkStream stream, int status, object value)
+    { try { await WriteResponseAsync(stream, status, value).ConfigureAwait(false); } catch { } }
 
     public async ValueTask DisposeAsync() => await StopAsync().ConfigureAwait(false);
 
+    private sealed record RequestData(string Method, string Target, IReadOnlyDictionary<string, string> Headers, byte[] Body);
     private sealed class ApiRequest
     {
         public string? ArchivePath { get; set; }
