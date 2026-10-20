@@ -55,7 +55,7 @@ public partial class MainWindow : Window
         if (save.ShowDialog() != true) return;
         try
         {
-            service.Create(save.FileName, files.FileNames);
+            service.Create(save.FileName, files.FileNames, overwrite: true);
             archivePath = save.FileName;
             ArchiveLabel.Text = archivePath;
             RefreshEntries();
