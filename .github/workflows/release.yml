@@ -1,0 +1,79 @@
+name: Publish Windows release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag_name:
+        description: "Existing or new release tag (for example v0.2.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore
+        run: dotnet restore src/ArcZipWindows/ArcZipWindows.csproj
+
+      - name: Build application
+        run: dotnet build src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --no-restore
+
+      - name: Run ZIP and local API smoke tests
+        run: dotnet run --project tests/ArcZipWindows.SmokeTests/ArcZipWindows.SmokeTests.csproj --configuration Release
+
+      - name: Publish portable builds and package release files
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force -Path release-assets | Out-Null
+          $runtimes = @(
+            @{ Rid = "win-x64"; Label = "x64" },
+            @{ Rid = "win-x86"; Label = "x86" },
+            @{ Rid = "win-arm64"; Label = "arm64" }
+          )
+          foreach ($runtime in $runtimes) {
+            $publishDir = "artifacts/ArcZipWindows-$($runtime.Rid)"
+            dotnet publish src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --runtime $runtime.Rid --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output $publishDir
+            if ($LASTEXITCODE -ne 0) { throw "Publish failed for $($runtime.Rid)" }
+            $zipPath = "release-assets/ArcZip-Windows-Portable-$($runtime.Label).zip"
+            Compress-Archive -Path "$publishDir/*" -DestinationPath $zipPath -CompressionLevel Optimal
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --no-progress -y
+
+      - name: Build x64 installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" installer\ArcZipWindows.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed" }
+          Copy-Item artifacts/ArcZip-Windows-Setup.exe release-assets/ArcZip-Windows-Setup-x64.exe -Force
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          name: ArcZip Windows ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release-assets/ArcZip-Windows-Portable-x64.zip
+            release-assets/ArcZip-Windows-Portable-x86.zip
+            release-assets/ArcZip-Windows-Portable-arm64.zip
+            release-assets/ArcZip-Windows-Setup-x64.exe
