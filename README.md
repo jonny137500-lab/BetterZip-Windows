@@ -49,7 +49,7 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md). Large file data is streamed, and
 
 ## Windows installer
 
-The Windows build workflow publishes `ArcZip-Windows-Setup.exe` and the self-contained `ArcZip-Windows-win-x64` artifact. The installer is unsigned; Windows SmartScreen may display a warning. Download only from this repository's Actions artifacts and review the source before use.
+The Windows build workflow publishes self-contained portable builds for `win-x64` (Intel and AMD 64-bit CPUs), `win-x86` (32-bit x86 Windows), and `win-arm64` (64-bit Windows on ARM), plus the `ArcZip-Windows-Setup.exe` installer for x64. Intel and AMD do not need separate binaries: both use the x64 build. ARM32 is not provided because the current .NET WPF app targets x64, x86 and ARM64. The installer is unsigned; Windows SmartScreen may display a warning. Download the matching architecture from this repository's Actions artifacts and review the source before use.
 
 ## License
 
