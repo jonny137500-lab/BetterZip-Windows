@@ -30,6 +30,22 @@ jobs:
           path: artifacts/ArcZipWindows-win-x64/
           if-no-files-found: error
           retention-days: 14
+      - name: Publish self-contained Windows x86 (32-bit) app
+        run: dotnet publish src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --runtime win-x86 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/ArcZipWindows-win-x86
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArcZip-Windows-win-x86
+          path: artifacts/ArcZipWindows-win-x86/
+          if-no-files-found: error
+          retention-days: 14
+      - name: Publish self-contained Windows ARM64 app
+        run: dotnet publish src/ArcZipWindows/ArcZipWindows.csproj --configuration Release --runtime win-arm64 --self-contained true -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true --output artifacts/ArcZipWindows-win-arm64
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ArcZip-Windows-win-arm64
+          path: artifacts/ArcZipWindows-win-arm64/
+          if-no-files-found: error
+          retention-days: 14
       - name: Install Inno Setup
         shell: pwsh
         run: choco install innosetup --no-progress -y
