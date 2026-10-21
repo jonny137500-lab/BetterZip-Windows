@@ -20,7 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag_name || github.ref }}
+          # For tag pushes, check out the tagged commit. For manual runs, build from the selected branch so a new tag can be created by the release action.
+          ref: ${{ github.ref }}
 
       - uses: actions/setup-dotnet@v4
         with:
