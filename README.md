@@ -49,7 +49,14 @@ See [docs/PERFORMANCE.md](docs/PERFORMANCE.md). Large file data is streamed, and
 
 ## Windows installer
 
-The Windows build workflow publishes self-contained portable builds for `win-x64` (Intel and AMD 64-bit CPUs), `win-x86` (32-bit x86 Windows), and `win-arm64` (64-bit Windows on ARM), plus the `ArcZip-Windows-Setup.exe` installer for x64. Intel and AMD do not need separate binaries: both use the x64 build. ARM32 is not provided because the current .NET WPF app targets x64, x86 and ARM64. The installer is unsigned; Windows SmartScreen may display a warning. Download the matching architecture from this repository's Actions artifacts and review the source before use.
+The Windows release workflow publishes these named files to the GitHub **Releases** page whenever a `v*` tag is pushed:
+
+- `ArcZip-Windows-Setup-x64.exe` — guided installer for Windows x64.
+- `ArcZip-Windows-Portable-x64.zip` — portable x64 build for Intel and AMD 64-bit CPUs.
+- `ArcZip-Windows-Portable-x86.zip` — portable 32-bit x86 build.
+- `ArcZip-Windows-Portable-arm64.zip` — portable Windows ARM64 build.
+
+Intel and AMD do not need separate binaries: both use the x64 build. ARM32 is not provided because the current .NET WPF app targets x64, x86 and ARM64. Portable builds are ZIP packages containing the app files; extract the matching package and run `ArcZipWindows.exe`. The installer is unsigned; Windows SmartScreen may display a warning. Until a tagged release is published, development builds may be available from GitHub Actions artifacts.
 
 ## License
 
